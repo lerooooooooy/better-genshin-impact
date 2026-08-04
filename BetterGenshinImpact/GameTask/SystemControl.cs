@@ -23,6 +23,16 @@ public class SystemControl
         return FindHandleByProcessName(processNames.ToArray());
     }
 
+    private static readonly string[] ZzzProcessNames =
+    [
+        "ZenlessZoneZero",
+        "ZenlessZoneZero_GF",
+        "ZenlessZoneZero_GN",
+        "ZenlessZoneZero_DX12",
+    ];
+
+    public static nint FindZzzHandle() => FindHandleByProcessName(ZzzProcessNames);
+
     public static async Task<nint> StartFromLocalAsync(string path)
     {
         if (!File.Exists(path))

@@ -140,6 +140,7 @@ public partial class App : Application
 
                 // Views
                 services.AddView<HomePage, HomePageViewModel>();
+                services.AddView<ZzzStartPage, ZzzStartPageViewModel>();
                 services.AddView<ScriptControlPage, ScriptControlViewModel>();
                 services.AddView<TriggerSettingsPage, TriggerSettingsPageViewModel>();
                 services.AddView<MacroSettingsPage, MacroSettingsPageViewModel>();

@@ -43,6 +43,24 @@ public partial class AllConfig : ObservableObject
     private string _captureMode = CaptureModes.BitBlt.ToString();
 
     /// <summary>
+    ///     绝区零(ZZZ)窗口捕获的方式
+    /// </summary>
+    [ObservableProperty]
+    private string _zzzCaptureMode = CaptureModes.BitBlt.ToString();
+
+    /// <summary>
+    ///     启动绝区零截图器时同时挂载日常任务 trigger
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzDailyTaskEnabled;
+
+    /// <summary>
+    ///     启动绝区零截图器时挂载通用模板 trigger（按 Assets\Template 目录里 <名字>_<x>_<y>_<w>x<h>.png 自动点击）
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzEmptyTriggerEnabled = true;
+
+    /// <summary>
     ///     详细的错误日志
     /// </summary>
     [ObservableProperty]
