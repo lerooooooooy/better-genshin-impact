@@ -55,23 +55,33 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         ProbeIntegrityLevel();
     }
 
-    public void Start(nint hWnd, CaptureModes mode, bool runDailyTask = false, bool runEmptyTrigger = true)
+    public void Start(nint hWnd, CaptureModes mode, bool runDailyTask = false, bool runEmptyTrigger = true, bool runTestTrigger = false)
     {
         Stop(); // 兜底
 
         _hWnd = hWnd;
         _frameIndex = 0;
-
-        // 激活窗口，保证后续 SendInput 命中 ZZZ(对齐原神 TaskTriggerDispatcher.Start)。
-        // 这里只调一次；触发器命中后不再切换前台，避免抢焦点打断用户对 BetterGI 的操作。
-        SystemControl.ActivateWindow(hWnd);
+        // 不再调 ActivateWindow:PostMessage 测试已验证 ZZZ 后台消息通路可用
+        // (BetterGI High→ZZZ Medium 不被 UIPI 拦,配合同步阻塞 + ZZZ 自身 GetMessage 即可消费)。
+        // 启动时切前台会抢 BetterGI 焦点,触发器命中后不再切前台(对齐 EmptyZzzTaskTrigger 设计)。
 
         _capture = GameCaptureFactory.Create(mode);
         // BitBltCapture.Start 收到 settings=null 会直接 return，必须显式传。
-        _capture.Start(hWnd, new Dictionary<string, object>
+        try
         {
-            { "autoFixWin11BitBlt", false },
-        });
+            _capture.Start(hWnd, new Dictionary<string, object>
+            {
+                { "autoFixWin11BitBlt", false },
+            });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ] capture start error: {ex}");
+            return;
+        }
+
+        // 提前到 trigger 创建之前：TestZzzTaskTrigger 需要拿到 overlay 引用，自己直接画框（不走回调）。
+        ShowOverlay(hWnd);
 
         var triggers = new List<IZzzTaskTrigger>();
         if (runDailyTask)
@@ -86,9 +96,12 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
                 onClick: (point, content) => DrawClickDot(point, content)));
         }
 
-        _triggers = triggers;
+        if (runTestTrigger)
+        {
+            triggers.Add(CreateTestTrigger());
+        }
 
-        ShowOverlay(hWnd);
+        _triggers = triggers;
 
         _timer.Interval = 50;
         _timer.Start();
@@ -107,7 +120,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ZZZ] capture stop error: {ex.Message}");
+            Debug.WriteLine($"[ZZZ] capture stop error: {ex}");
         }
 
         _capture?.Dispose();
@@ -132,6 +145,43 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
             onMatch: (rect, content, label) => DrawOverlayRect(rect, content, label),
             onClick: (point, content) => DrawClickDot(point, content),
             onFinished: () => DailyTaskFinishedEvent?.Invoke(this, EventArgs.Empty));
+    }
+
+    private TestZzzTaskTrigger CreateTestTrigger()
+    {
+        return new TestZzzTaskTrigger(
+            captureProvider: BuildCaptureProvider(),
+            overlay: _overlay,
+            postMessageSimulator: TaskContext.Instance().PostMessageSimulator);
+    }
+
+    /// <summary>
+    /// 构造一个 captureProvider 闭包:每次调用都新截一帧并包成 ZzzCaptureContent。
+    /// 闭包捕获 this(dispatcher 整个生命周期内实例不变);Stop 时 _capture 置 null,provider 自然返回 null。
+    /// 线程安全:Capture() 各自实现保证;_capture / _hWnd 字段读在 .NET 上对后台线程可见性可接受(Stop 时 timer 先停,无新 Tick 触发)。
+    /// 整段 try/catch:兜住 native 调用(Capture / GetCaptureRect / GetScale)抛的异常,避免 background 任务挂掉或异常逃逸成 UnobservedTaskException。
+    /// </summary>
+    private Func<ZzzCaptureContent?> BuildCaptureProvider()
+    {
+        return () =>
+        {
+            try
+            {
+                var capture = _capture;
+                if (capture == null || !capture.IsCapturing) return null;
+                var frame = capture.Capture();
+                if (frame?.Frame == null) return null;
+                var captureRect = SystemControl.GetCaptureRect(_hWnd);
+                var dpiScale = DpiHelper.GetScale(_hWnd).Y;
+                return new ZzzCaptureContent(
+                    frame.Frame, _frameIndex, _timer.Interval, _hWnd, captureRect, dpiScale);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ZZZ-Test] capture provider exception: {ex.GetType().Name}: {ex.Message}");
+                return null;
+            }
+        };
     }
 
     /// <summary>
@@ -176,6 +226,46 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         }
     }
 
+    /// <summary>
+    /// 热挂载/卸载测试 trigger。模式与 SetDailyTaskEnabled 一致,见该方法注释。
+    /// </summary>
+    public void SetTestTriggerEnabled(bool enabled)
+    {
+        lock (_locker)
+        {
+            if (_capture == null)
+            {
+                return;
+            }
+
+            var hasTest = _triggers.Exists(t => t is TestZzzTaskTrigger);
+            if (enabled == hasTest)
+            {
+                return;
+            }
+
+            var newList = new List<IZzzTaskTrigger>(_triggers);
+            if (enabled)
+            {
+                newList.Add(CreateTestTrigger());
+                Debug.WriteLine("[ZZZ] test trigger 已挂载(重新打开)");
+            }
+            else
+            {
+                var test = newList.Find(t => t is TestZzzTaskTrigger);
+                if (test != null)
+                {
+                    newList.Remove(test);
+                    (test as IDisposable)?.Dispose();
+                }
+
+                Debug.WriteLine("[ZZZ] test trigger 已卸载");
+            }
+
+            _triggers = newList;
+        }
+    }
+
     private void Tick(object? sender, ElapsedEventArgs e)
     {
         // 抢锁失败直接丢弃(同一帧不重复算)。
@@ -193,7 +283,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ZZZ] capture error: {ex.Message}");
+                Debug.WriteLine($"[ZZZ] capture error: {ex}");
                 return;
             }
 
@@ -209,9 +299,6 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
             var captureRect = SystemControl.GetCaptureRect(_hWnd);
             var dpiScale = DpiHelper.GetScale(_hWnd).Y;
 
-            Debug.WriteLine(
-                $"[ZZZ] tick frame={_frameIndex} size={frame.Frame.Width}x{frame.Frame.Height} ts={DateTime.Now:HH:mm:ss.fff}");
-
             using var content = new ZzzCaptureContent(frame.Frame, _frameIndex, intervalMs, _hWnd, captureRect, dpiScale);
             foreach (var trigger in _triggers)
             {
@@ -226,15 +313,8 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[ZZZ] trigger {trigger.Name} error: {ex.Message}");
+                    Debug.WriteLine($"[ZZZ] trigger {trigger.Name} error: {ex}");
                 }
-            }
-
-            // 本帧末尾清掉上一帧残留的绿框/标签(不动红点)。
-            var overlay = _overlay;
-            if (overlay != null)
-            {
-                Application.Current?.Dispatcher.BeginInvoke(() => overlay.ClearMatchRect());
             }
         }
         finally
@@ -256,11 +336,10 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     }
 
     /// <summary>
-    /// 只快照 RECT? 和 float 两个值，不传 Mat。
+    /// 只快照 RECT? 和 float 两个值，不传 Mat。静态化供 <see cref="TemplateOverlayRunner"/> 等调用方复用。
     /// </summary>
-    private void DrawOverlayRect(DrawingRectangle rect, ZzzCaptureContent content, string label)
+    public static void DrawMatchRect(ZzzOverlayWindow? overlay, DrawingRectangle rect, ZzzCaptureContent content, string label)
     {
-        var overlay = _overlay;
         if (overlay == null)
         {
             return;
@@ -271,6 +350,13 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         Application.Current?.Dispatcher.BeginInvoke(() =>
             overlay.SetMatchRect(rect, capturedCaptureRect, capturedDpiScale, label));
     }
+
+    /// <summary>
+    /// 实例包装：把当前 dispatcher 的 <see cref="_overlay"/> 作为参数传入 <see cref="DrawMatchRect"/>。
+    /// 保留实例方法供 dispatcher 内部 lambda 直接调用（少打一个 overlay 参数）。
+    /// </summary>
+    private void DrawOverlayRect(DrawingRectangle rect, ZzzCaptureContent content, string label)
+        => DrawMatchRect(_overlay, rect, content, label);
 
     private void DrawClickDot(DrawingPoint point, ZzzCaptureContent content)
     {
@@ -311,7 +397,10 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     /// <summary>
     /// dispatcher 构造时读 OpenProcessToken + GetTokenInformation + ConvertSidToStringSidW，
     /// 打 [ZZZ] BetterGI integrity=S-1-16-12288。
-    /// BetterGI 是 High、ZZZ 是 Medium 时 PostMessage 带坐标会被 UIPI 吞，所以走前台 SendInput。
+    /// BetterGI 是 High、ZZZ 是 Medium 时仍走前台 SendInput:不是 UIPI 卡 PostMessage(UIPI 只拦低→高,
+    /// High→Medium 不拦),而是 ZZZ 用 DX 全屏优化 + RawInput/DirectInput 管线,不读 WM_KEYDOWN,
+    /// PostMessage 投递后消息进游戏 user32 队列但游戏从不 GetMessage 消费。SendInput 模拟硬件事件,
+    /// 经 RIT(系统进程)直接转给前台线程,不依赖 user32 消息泵。
     /// </summary>
     private static void ProbeIntegrityLevel()
     {

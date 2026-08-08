@@ -61,6 +61,12 @@ public partial class AllConfig : ObservableObject
     private bool _zzzEmptyTriggerEnabled = true;
 
     /// <summary>
+    ///     启动绝区零截图器时挂载测试 trigger（开发/调试占位，当前为空实现）
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzTestTriggerEnabled;
+
+    /// <summary>
     ///     详细的错误日志
     /// </summary>
     [ObservableProperty]

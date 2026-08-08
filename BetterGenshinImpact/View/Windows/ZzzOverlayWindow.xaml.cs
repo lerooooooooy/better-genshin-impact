@@ -76,9 +76,6 @@ public partial class ZzzOverlayWindow : System.Windows.Window
         Width = rect.Width / dpi;
         Height = rect.Height / dpi;
 
-        Debug.WriteLine(
-            $"[ZZZ-overlay] RefreshPosition capture=({rect.Left},{rect.Top},{rect.Right},{rect.Bottom}) dpi={dpi} overlayWpf=({Left},{Top},{Width},{Height})");
-
         RedrawClickDots();
     }
 
@@ -109,9 +106,6 @@ public partial class ZzzOverlayWindow : System.Windows.Window
         var yDip = screenY / dpiScale - Top;
         var wDip = rect.Width / dpiScale;
         var hDip = rect.Height / dpiScale;
-
-        Debug.WriteLine(
-            $"[ZZZ-overlay] rectCap=({rect.X},{rect.Y},{rect.Width},{rect.Height}) screen=({screenX},{screenY}) drawDip=({xDip:F1},{yDip:F1}) overlay=({Left:F1},{Top:F1})..({Left + Width:F1},{Top + Height:F1})");
 
         var border = new Rectangle
         {

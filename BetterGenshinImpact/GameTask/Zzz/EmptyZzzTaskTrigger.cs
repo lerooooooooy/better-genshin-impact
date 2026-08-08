@@ -93,14 +93,11 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
                 var safeRoi = ClampRoi(template.Roi, content.Image.Width, content.Image.Height);
                 if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
                 {
-                    Debug.WriteLine($"[ZZZ] {template.Name} skipped: ROI out of image bounds after padding");
                     continue;
                 }
 
                 using var roi = new Mat(content.Image, safeRoi); // view，不复制像素
                 var (loc, score) = TemplateMatchHelper.MatchTemplate(roi, template.Template, TemplateMatchModes.CCoeffNormed);
-                Debug.WriteLine(
-                    $"[ZZZ-match] {template.Name} score={score:F3} loc=({loc.X},{loc.Y}) roi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
 
                 if (score >= MatchSuccessThreshold)
                 {
@@ -113,7 +110,6 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
                     var nowMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency;
                     if (_nextClickTickMs.TryGetValue(template.Name, out var nextMs) && nowMs < nextMs)
                     {
-                        Debug.WriteLine($"[ZZZ] skip match {template.Name}: cooldown {(nextMs - nowMs)}ms remaining");
                         continue;
                     }
 
@@ -194,8 +190,6 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
             var compactRoi = new CvRect(x, y, w, h);
             var roi = new CvRect(x - padding, y - padding, w + padding * 2, h + padding * 2);
             list.Add(new TemplateEntry(name, compactRoi, roi, template));
-            Debug.WriteLine(
-                $"[ZZZ] loaded {name} padding={padding} searchRoi=({roi.X},{roi.Y},{roi.Width},{roi.Height})");
         }
 
         Debug.WriteLine($"[ZZZ] templates loaded: {list.Count}");
@@ -203,7 +197,7 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
     }
 
     /// <summary>
-    /// 把可能越界的 Roi 钳制到当前帧的 [0, W) × [0, H) 范围，完全越界时 W=H=0。
+    /// 把可能越界的 Roi 钳制到当前帧的 [0, W) × [0, H) 范围，完全越界时退回整个图片范围。
     /// </summary>
     private static CvRect ClampRoi(CvRect r, int width, int height)
     {
@@ -213,7 +207,7 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
         var y2 = Math.Min(height, r.Y + r.Height);
         if (x2 <= x1 || y2 <= y1)
         {
-            return new CvRect(0, 0, 0, 0);
+            return new CvRect(0, 0, width, height);
         }
 
         return new CvRect(x1, y1, x2 - x1, y2 - y1);
@@ -246,19 +240,15 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
         Simulation.SendInput.Mouse.MoveMouseTo(absX, absY);
         Simulation.SendInput.Mouse.LeftButtonClick();
         Debug.WriteLine($"[ZZZ] click {name} at screen=({screenX},{screenY}) preDelay={preDelayMs}ms");
-        Debug.WriteLine($"[ZZZ-click] SendInput normalized ({absX:F0},{absY:F0}) screenW={screenWidth} screenH={screenHeight}");
     }
 
     private void DrawMatchAndSave(ZzzCaptureContent content, TemplateEntry template, int absX, int absY, double score)
     {
         var count = _successSavedCount.GetValueOrDefault(template.Name, 0);
         var matchRect = new CvRect(absX, absY, template.Template.Width, template.Template.Height);
-        Debug.WriteLine(
-            $"[ZZZ-success] {template.Name} score={score:F3} searchRoi=({template.Roi.X},{template.Roi.Y},{template.Roi.Width},{template.Roi.Height}) -> absRect=({matchRect.X},{matchRect.Y},{matchRect.Width},{matchRect.Height}) captureRect={content.CaptureRect} dpi={content.DpiScale}");
 
         if (count >= MaxSuccessPerTemplate)
         {
-            Debug.WriteLine($"[ZZZ-success] SaveMatch skipped: count={count}/{MaxSuccessPerTemplate}");
             return;
         }
 
@@ -287,7 +277,6 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
         var count = _debugSavedCount.GetValueOrDefault(template.Name, 0);
         if (count >= MaxDebugPerTemplate)
         {
-            Debug.WriteLine($"[ZZZ-debug] SaveDebug skipped: count={count}/{MaxDebugPerTemplate}");
             return;
         }
 

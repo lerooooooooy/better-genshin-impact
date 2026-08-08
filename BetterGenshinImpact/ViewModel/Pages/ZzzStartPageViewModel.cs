@@ -78,6 +78,10 @@ public partial class ZzzStartPageViewModel : ViewModel
         {
             _dispatcher.SetDailyTaskEnabled(Config.ZzzDailyTaskEnabled);
         }
+        else if (e.PropertyName == nameof(AllConfig.ZzzTestTriggerEnabled))
+        {
+            _dispatcher.SetTestTriggerEnabled(Config.ZzzTestTriggerEnabled);
+        }
     }
 
     partial void OnSelectedModeChanged(string? value)
@@ -286,8 +290,8 @@ public partial class ZzzStartPageViewModel : ViewModel
 
     private void Start(IntPtr hWnd)
     {
-        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzDailyTaskEnabled, Config.ZzzEmptyTriggerEnabled);
+        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzDailyTaskEnabled, Config.ZzzEmptyTriggerEnabled, Config.ZzzTestTriggerEnabled);
         IsRunning = true;
-        StatusText = "运行中";
+        StatusText = "运行中111";
     }
 }

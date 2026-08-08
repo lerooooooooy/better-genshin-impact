@@ -125,26 +125,16 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
     public void OnCapture(ZzzCaptureContent content)
     {
-        var foreground = GetForegroundHandle();
-        var sinceLastClick = _lastClickTickMs == 0 ? -1 : GetCurrentTickMs() - _lastClickTickMs;
-        var cooldownRemaining = Math.Max(0, _nextClickTickMs - GetCurrentTickMs());
-        Debug.WriteLine(
-            $"[ZZZ-Daily] OnCapture frame={content.FrameIndex} seq={_sequence} hwnd=0x{content.Hwnd:X} image={content.Image.Width}x{content.Image.Height} foreground=0x{foreground:X} match={foreground == content.Hwnd} sinceLastClick={sinceLastClick}ms cooldownLeft={cooldownRemaining}ms framesSinceLastClick={(_lastClickFrame < 0 ? -1 : content.FrameIndex - _lastClickFrame)}");
-
         _selectedTemplate ??= LoadTemplate(SelectedTemplateName);
         _notSelectedTemplate ??= LoadTemplate(NotSelectedTemplateName);
         if (_selectedTemplate == null || _notSelectedTemplate == null)
         {
-            Debug.WriteLine(
-                $"[ZZZ-Daily] skip frame={content.FrameIndex}: template missing sel={_selectedTemplate != null} noSel={_notSelectedTemplate != null}");
             Finish("core template missing");
             return;
         }
 
         if (IsInCooldown())
         {
-            Debug.WriteLine(
-                $"[ZZZ-Daily] skip frame={content.FrameIndex}: cooldown left {cooldownRemaining}ms");
             return;
         }
 
@@ -179,10 +169,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
     private void ExecuteTabCheck(ZzzCaptureContent content)
     {
-        var selectedHit = TryMatch(content, _selectedTemplate!, SelectedTabRoi, out var selScore);
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=0 tab selected hit={selectedHit} score={selScore:F3}");
-
+        var selectedHit = TryMatch(content, _selectedTemplate!, SelectedTabRoi, out _);
         if (selectedHit)
         {
             _sequence = 1;
@@ -190,9 +177,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return;
         }
 
-        var notSelectedHit = TryMatch(content, _notSelectedTemplate!, NotSelectedTabRoi, out var noSelScore);
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=0 tab not-selected hit={notSelectedHit} score={noSelScore:F3}");
+        var notSelectedHit = TryMatch(content, _notSelectedTemplate!, NotSelectedTabRoi, out _);
         if (!notSelectedHit)
         {
             return;
@@ -203,14 +188,10 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         _onMatch?.Invoke(
             new DrawingRectangle(NotSelectedTabRoi.X, NotSelectedTabRoi.Y, NotSelectedTabRoi.Width, NotSelectedTabRoi.Height),
             content, "日常 tab 未选中");
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=0 try click tab at ({tabX},{tabY}) foreground=0x{GetForegroundHandle():X} match={GetForegroundHandle() == content.Hwnd}");
         if (TryClick(content, tabX, tabY, "日常 tab"))
         {
             _onClick?.Invoke(new DrawingPoint(tabX, tabY), content);
             RecordClick(content);
-            Debug.WriteLine(
-                $"[ZZZ-Daily] CLICKED tab at ({tabX},{tabY}) selectedScore={selScore:F3} notSelectedScore={noSelScore:F3}");
         }
 
         _sequence = 1;
@@ -222,13 +203,8 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         var safeRoi = ClampRoi(QianWangRoi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
         {
-            Debug.WriteLine(
-                $"[ZZZ-Daily] seq=1 skip frame={content.FrameIndex}: navigate ROI empty after clamp safeRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
             return;
         }
-
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=1 OCR begin frame={content.FrameIndex} safeRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
 
         using var roi = new Mat(content.Image, safeRoi);
         OcrResult ocrResult;
@@ -242,11 +218,8 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return;
         }
 
-        Debug.WriteLine($"[ZZZ-Daily] seq=1 OCR done regions={ocrResult.Regions.Length}");
         foreach (var region in ocrResult.Regions)
         {
-            Debug.WriteLine(
-                $"[ZZZ-Daily] seq=1 OCR region text=\"{region.Text}\" score={region.Score:F3} rect=({region.Rect.Center.X:F1},{region.Rect.Center.Y:F1})");
             if (!region.Text.Contains("前往", StringComparison.Ordinal))
             {
                 continue;
@@ -259,23 +232,16 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
                 matchRect.Width,
                 matchRect.Height);
             _onMatch?.Invoke(drawRect, content, "前往");
-            Debug.WriteLine(
-                $"[ZZZ-Daily] seq=1 match 前往 at rect=({drawRect.X},{drawRect.Y},{drawRect.Width},{drawRect.Height}) text=\"{region.Text}\"");
 
             var center = region.Rect.Center;
             var x = Math.Clamp(safeRoi.X + (int)Math.Round(center.X), safeRoi.X,
                 safeRoi.X + safeRoi.Width - 1);
             var y = Math.Clamp(safeRoi.Y + (int)Math.Round(center.Y), safeRoi.Y,
                 safeRoi.Y + safeRoi.Height - 1);
-            Debug.WriteLine(
-                $"[ZZZ-Daily] seq=1 try click 前往 at ({x},{y}) text=\"{region.Text}\" foreground=0x{GetForegroundHandle():X} match={GetForegroundHandle() == content.Hwnd}");
-            var intervalMs = _lastClickTickMs == 0 ? -1 : GetCurrentTickMs() - _lastClickTickMs;
             if (TryClick(content, x, y, "前往"))
             {
                 _onClick?.Invoke(new DrawingPoint(x, y), content);
                 RecordClick(content);
-                Debug.WriteLine(
-                    $"[ZZZ-Daily] CLICKED 前往 at ({x},{y}) text=\"{region.Text}\" interval={intervalMs}ms");
             }
 
             _sequence = 2;
@@ -303,16 +269,12 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         if (safeRoi.Width <= 0 || safeRoi.Height <= 0
             || safeRoi.Width < f2Tpl.Width || safeRoi.Height < f2Tpl.Height)
         {
-            Debug.WriteLine(
-                $"[ZZZ-Daily] seq=2 skip: ROI invalid safeRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height}) tpl={f2Tpl.Width}x{f2Tpl.Height} → finish");
             Finish("seq2 ROI invalid");
             return;
         }
 
         using var imageRoi = new Mat(content.Image, safeRoi);
         var (loc, score) = TemplateMatchHelper.MatchTemplate(imageRoi, f2Tpl, TemplateMatchModes.CCoeffNormed);
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=2 F2 score={score:F3} loc=({loc.X},{loc.Y}) safeRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
 
         if (score < MatchSuccessThreshold)
         {
@@ -330,15 +292,13 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
         TryPressFKey();
         RecordClick(content);
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=2 PRESSED F at center=({absX + f2Tpl.Width / 2},{absY + f2Tpl.Height / 2}) score={score:F3}");
         _sequence = 3;
         Debug.WriteLine("[ZZZ-Daily] seq=2 → seq=3 (F pressed)");
     }
 
     private void ExecuteContinueArrow(ZzzCaptureContent content)
     {
-        if (!DetectContinueArrow(content, out var center))
+        if (!DetectContinueArrow(content, out _))
         {
             Debug.WriteLine("[ZZZ-Daily] seq=3 continue-arrow not found → finish");
             Finish("seq3 no arrow");
@@ -349,8 +309,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         _onMatch?.Invoke(
             new DrawingRectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content, "继续对话");
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=3 continue-arrow hit at center=({center.X},{center.Y})");
 
         TryPressSpaceKey();
         RecordClick(content);
@@ -364,7 +322,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private void ExecuteDialogOption1(ZzzCaptureContent content)
     {
-        if (!DetectFirstDialogOption(content, out var center, out var score))
+        if (!DetectFirstDialogOption(content, out _, out var score))
         {
             Debug.WriteLine($"[ZZZ-Daily] seq=4 dialog-option1 not found score={score:F3} → finish");
             Finish("seq4 no option1");
@@ -374,8 +332,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         _onMatch?.Invoke(
             new DrawingRectangle(DialogOption1Roi.X, DialogOption1Roi.Y, DialogOption1Roi.Width, DialogOption1Roi.Height),
             content, "选项1");
-        Debug.WriteLine(
-            $"[ZZZ-Daily] seq=4 dialog-option1 hit score={score:F3} center=({center.X},{center.Y})");
 
         TryPressKey1();
         RecordClick(content);
@@ -407,7 +363,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
         using var imageRoi = new Mat(content.Image, safeRoi);
         var (loc, score) = TemplateMatchHelper.MatchTemplate(imageRoi, tpl, TemplateMatchModes.CCoeffNormed);
-        Debug.WriteLine($"[ZZZ-Daily] seq=5 skip score={score:F3} loc=({loc.X},{loc.Y})");
         if (score < SkipThreshold)
         {
             Debug.WriteLine("[ZZZ-Daily] seq=5 skip not matched → finish");
@@ -455,7 +410,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
         using var imageRoi = new Mat(content.Image, safeRoi);
         var (loc, score) = TemplateMatchHelper.MatchTemplate(imageRoi, tpl, TemplateMatchModes.CCoeffNormed);
-        Debug.WriteLine($"[ZZZ-Daily] seq=6 battery score={score:F3} loc=({loc.X},{loc.Y})");
         if (score < BatteryThreshold)
         {
             Debug.WriteLine("[ZZZ-Daily] seq=6 battery not matched → finish");
@@ -466,7 +420,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         _onMatch?.Invoke(
             new DrawingRectangle(safeRoi.X + loc.X, safeRoi.Y + loc.Y, tpl.Width, tpl.Height),
             content, "电池奖励");
-        Debug.WriteLine($"[ZZZ-Daily] seq=6 battery hit score={score:F3}");
 
         TryPressEscKey();
         RecordClick(content);
@@ -479,7 +432,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         Simulation.SendInput.Keyboard.KeyDown(User32.VK.VK_1);
         Thread.Sleep(KeyPressHoldMs);
         Simulation.SendInput.Keyboard.KeyUp(User32.VK.VK_1);
-        Debug.WriteLine($"[ZZZ-Daily] pressed VK_1 hold={KeyPressHoldMs}ms");
     }
 
     private static void TryPressEscKey()
@@ -487,7 +439,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         Simulation.SendInput.Keyboard.KeyDown(User32.VK.VK_ESCAPE);
         Thread.Sleep(KeyPressHoldMs);
         Simulation.SendInput.Keyboard.KeyUp(User32.VK.VK_ESCAPE);
-        Debug.WriteLine($"[ZZZ-Daily] pressed VK_ESCAPE hold={KeyPressHoldMs}ms");
     }
 
     private static void TryPressFKey()
@@ -495,7 +446,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         Simulation.SendInput.Keyboard.KeyDown(User32.VK.VK_F);
         Thread.Sleep(KeyPressHoldMs);
         Simulation.SendInput.Keyboard.KeyUp(User32.VK.VK_F);
-        Debug.WriteLine($"[ZZZ-Daily] pressed VK_F hold={KeyPressHoldMs}ms");
     }
 
     private static void TryPressSpaceKey()
@@ -503,7 +453,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         Simulation.SendInput.Keyboard.KeyDown(User32.VK.VK_SPACE);
         Thread.Sleep(KeyPressHoldMs);
         Simulation.SendInput.Keyboard.KeyUp(User32.VK.VK_SPACE);
-        Debug.WriteLine($"[ZZZ-Daily] pressed VK_SPACE hold={KeyPressHoldMs}ms");
     }
 
     /// <summary>
@@ -530,8 +479,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             mask);
 
         var count = Cv2.CountNonZero(mask);
-        Debug.WriteLine(
-            $"[ZZZ-Daily] continue-arrow pixels={count} roi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
         if (count < ContinueArrowMinPixels || count > ContinueArrowMaxPixels)
         {
             return false;
@@ -571,8 +518,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         using var imageRoi = new Mat(content.Image, safeRoi);
         var (loc, matchScore) = TemplateMatchHelper.MatchTemplate(imageRoi, tpl, TemplateMatchModes.CCoeffNormed);
         score = matchScore;
-        Debug.WriteLine(
-            $"[ZZZ-Daily] dialog-option1 score={matchScore:F3} loc=({loc.X},{loc.Y}) safeRoi=({safeRoi.X},{safeRoi.Y},{safeRoi.Width},{safeRoi.Height})");
         return matchScore >= DialogOption1Threshold;
     }
 
@@ -623,7 +568,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         var y2 = Math.Min(height, roi.Y + roi.Height);
         if (x2 <= x1 || y2 <= y1)
         {
-            return new CvRect(0, 0, 0, 0);
+            return new CvRect(0, 0, width, height);
         }
 
         return new CvRect(x1, y1, x2 - x1, y2 - y1);
@@ -658,8 +603,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
         var absY = screenY * 65535.0 / (screenHeight - 1);
         Simulation.SendInput.Mouse.MoveMouseTo(absX, absY);
         Simulation.SendInput.Mouse.LeftButtonClick();
-        Debug.WriteLine(
-            $"[ZZZ-Daily] click {label} at screen=({screenX},{screenY}) preDelay={preDelayMs}ms foreground=0x{GetForegroundHandle():X} match={GetForegroundHandle() == content.Hwnd}");
         return true;
     }
 
