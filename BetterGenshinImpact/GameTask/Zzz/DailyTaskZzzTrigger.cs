@@ -34,11 +34,18 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
     private static readonly CvRect QianWangRoi = new(842, 820, 243, 89);
 
     // 继续对话箭头 »» 半透明白灰,实测无彩色(S≈0) + 高亮度(V≈141~184),不能用色相识别
+    // 阈值已根据离线诊断放宽以适应动画淡帧。
     private static readonly CvRect ContinueArrowRoi = new(1462, 966, 42, 45);
     private const int ContinueArrowSMax = 40;
     private const int ContinueArrowVMin = 130;
-    private const int ContinueArrowMinPixels = 120;
-    private const int ContinueArrowMaxPixels = 900;
+    private const int ContinueArrowMinArea = 80;
+    private const int ContinueArrowMaxArea = 400;
+    private const double ContinueArrowMinAspect = 1.3;
+    private const double ContinueArrowMinExtent = 0.4;
+    private const double ContinueArrowMinLargestFraction = 0.5;
+    private const double ContinueArrowMaxConvexity = 0.85;
+    private const int ContinueArrowMinHeight = 16;
+    private const int ContinueArrowMaxLabels = 2;
 
     // 对话点单第一个选项框:文字每次不同,只匹配左侧「①」数字徽标(选项1独有,▶ 箭头选项1/2 都有不唯一)。
     private const string DialogOption1TemplateName = "dialogOpt1_1376_570_44x44.png";
@@ -200,7 +207,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
     private void ExecuteQianWangOcr(ZzzCaptureContent content)
     {
-        var safeRoi = ClampRoi(QianWangRoi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(QianWangRoi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
         {
             return;
@@ -265,7 +272,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return;
         }
 
-        var safeRoi = ClampRoi(F2Roi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(F2Roi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width <= 0 || safeRoi.Height <= 0
             || safeRoi.Width < f2Tpl.Width || safeRoi.Height < f2Tpl.Height)
         {
@@ -298,14 +305,32 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
 
     private void ExecuteContinueArrow(ZzzCaptureContent content)
     {
-        if (!DetectContinueArrow(content, out _))
+        if (!ZzzImageUtils.DetectArrowBlob(
+            content.Image, ContinueArrowRoi,
+            ContinueArrowSMax, ContinueArrowVMin,
+            ContinueArrowMinArea, ContinueArrowMaxArea,
+            ContinueArrowMinHeight,
+            ContinueArrowMinAspect, ContinueArrowMinExtent,
+            ContinueArrowMinLargestFraction, ContinueArrowMaxConvexity,
+            ContinueArrowMaxLabels))
         {
             Debug.WriteLine("[ZZZ-Daily] seq=3 continue-arrow not found → finish");
             Finish("seq3 no arrow");
             return;
         }
 
-        var safeRoi = ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
+        // 命中后把 ROI 切片落盘,便于事后肉眼比对 / 发给 Claude 验证是否真箭头
+        try
+        {
+            var snapshotPath = ZzzImageUtils.SaveArrowRoiSnapshot(content.Image, ContinueArrowRoi, "daily_seq3");
+            Debug.WriteLine($"[ZZZ-Daily] saved snapshot: {snapshotPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ-Daily] snapshot save failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        var safeRoi = ZzzImageUtils.ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
         _onMatch?.Invoke(
             new DrawingRectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content, "继续对话");
@@ -353,7 +378,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return;
         }
 
-        var safeRoi = ClampRoi(SkipRoi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(SkipRoi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width < tpl.Width || safeRoi.Height < tpl.Height)
         {
             Debug.WriteLine("[ZZZ-Daily] seq=5 skip ROI invalid → finish");
@@ -400,7 +425,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return;
         }
 
-        var safeRoi = ClampRoi(BatteryRoi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(BatteryRoi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width < tpl.Width || safeRoi.Height < tpl.Height)
         {
             Debug.WriteLine("[ZZZ-Daily] seq=6 battery ROI invalid → finish");
@@ -456,41 +481,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
     }
 
     /// <summary>
-    /// 检测右下角"继续对话"箭头 »»。箭头为半透明白灰,用无彩色(低饱和)+高亮度掩膜识别。
-    /// 命中返回 true,center 为点击点(ROI 中心)。未接入 OnCapture 流程,供后续调用。
-    /// </summary>
-    private static bool DetectContinueArrow(ZzzCaptureContent content, out DrawingPoint center)
-    {
-        center = default;
-        var safeRoi = ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
-        if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
-        {
-            return false;
-        }
-
-        using var sub = new Mat(content.Image, safeRoi);
-        using var hsv = new Mat();
-        Cv2.CvtColor(sub, hsv, ColorConversionCodes.BGR2HSV);
-        using var mask = new Mat();
-        Cv2.InRange(
-            hsv,
-            new Scalar(0, 0, ContinueArrowVMin),
-            new Scalar(179, ContinueArrowSMax, 255),
-            mask);
-
-        var count = Cv2.CountNonZero(mask);
-        if (count < ContinueArrowMinPixels || count > ContinueArrowMaxPixels)
-        {
-            return false;
-        }
-
-        center = new DrawingPoint(
-            safeRoi.X + safeRoi.Width / 2,
-            safeRoi.Y + safeRoi.Height / 2);
-        return true;
-    }
-
-    /// <summary>
     /// 检测右侧对话点单的第一个选项框。文字每次不同,只对左侧固定的「① + ▶」图标块做模板匹配。
     /// 命中返回 true,center 为要点击的第一个选项框中心。模板缺失/未命中返回 false(不抛)。
     /// </summary>
@@ -507,7 +497,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             return false;
         }
 
-        var safeRoi = ClampRoi(DialogOption1Roi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(DialogOption1Roi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width < tpl.Width || safeRoi.Height < tpl.Height)
         {
             Debug.WriteLine(
@@ -547,7 +537,7 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
     private static bool TryMatch(ZzzCaptureContent content, Mat template, CvRect roi, out double score)
     {
         score = 0;
-        var safeRoi = ClampRoi(roi, content.Image.Width, content.Image.Height);
+        var safeRoi = ZzzImageUtils.ClampRoi(roi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width < template.Width || safeRoi.Height < template.Height)
         {
             return false;
@@ -558,20 +548,6 @@ public sealed class DailyTaskZzzTrigger : IZzzTaskTrigger, IDisposable
             imageRoi, template, TemplateMatchModes.CCoeffNormed);
         score = matchScore;
         return score >= MatchSuccessThreshold;
-    }
-
-    private static CvRect ClampRoi(CvRect roi, int width, int height)
-    {
-        var x1 = Math.Max(0, roi.X);
-        var y1 = Math.Max(0, roi.Y);
-        var x2 = Math.Min(width, roi.X + roi.Width);
-        var y2 = Math.Min(height, roi.Y + roi.Height);
-        if (x2 <= x1 || y2 <= y1)
-        {
-            return new CvRect(0, 0, width, height);
-        }
-
-        return new CvRect(x1, y1, x2 - x1, y2 - y1);
     }
 
     private static nint GetForegroundHandle()

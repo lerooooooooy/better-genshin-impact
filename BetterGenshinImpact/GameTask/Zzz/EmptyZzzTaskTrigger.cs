@@ -90,7 +90,7 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
         {
             try
             {
-                var safeRoi = ClampRoi(template.Roi, content.Image.Width, content.Image.Height);
+                var safeRoi = ZzzImageUtils.ClampRoi(template.Roi, content.Image.Width, content.Image.Height);
                 if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
                 {
                     continue;
@@ -194,23 +194,6 @@ public sealed class EmptyZzzTaskTrigger : IZzzTaskTrigger
 
         Debug.WriteLine($"[ZZZ] templates loaded: {list.Count}");
         return list;
-    }
-
-    /// <summary>
-    /// 把可能越界的 Roi 钳制到当前帧的 [0, W) × [0, H) 范围，完全越界时退回整个图片范围。
-    /// </summary>
-    private static CvRect ClampRoi(CvRect r, int width, int height)
-    {
-        var x1 = Math.Max(0, r.X);
-        var y1 = Math.Max(0, r.Y);
-        var x2 = Math.Min(width, r.X + r.Width);
-        var y2 = Math.Min(height, r.Y + r.Height);
-        if (x2 <= x1 || y2 <= y1)
-        {
-            return new CvRect(0, 0, width, height);
-        }
-
-        return new CvRect(x1, y1, x2 - x1, y2 - y1);
     }
 
     /// <summary>
