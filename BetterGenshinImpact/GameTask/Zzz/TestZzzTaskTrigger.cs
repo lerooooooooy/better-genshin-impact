@@ -39,6 +39,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private static readonly Random _rng = new();
     private const int ActionDelayMinMs = 300;
     private const int ActionDelayMaxMsExclusive = 401; // Random.Next 上界 exclusive
+    // 阈值 2 = "连续 > 2 次" = 第 3 次 retreat 时暂停 trigger,避免 seq=N ↔ seq=M 无限空转
+    private const int RetreatStreakPauseThreshold = 2;
 
 
     private const string F2Path = "Assets\\Template\\Daily\\daliyF2_1538_116_36x24_200.png";
@@ -46,7 +48,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private const string DailyNoSelPath = "Assets\\Template\\Daily\\daliyNoSel_926_158_129x43.png";
     private const string DaliyUiPath = "Assets\\Template\\Daily\\daliyUi_1701_221_54x290.png";
     private const string DaliyGoPath = "Assets\\Template\\Daily\\daliyGo_871_843_181x47.png";
-    private const string DialogOpt1Path = "Assets\\Template\\Daily\\dialogOpt1_1376_570_44x44.png";
+    private const string DialogOpt1Path = "Assets\\Template\\Daily\\dialogOpt1_1391_573_16x29_200.png";
+    private const string Rwd1Path = "Assets\\Template\\Daily\\rwd1_1161_510_74x58_400.png";
 
     // 继续对话箭头 »» (屏幕最右下角):半透明白灰(无彩色 + 高亮度)。
     // 动画过程中箭头会在 ~30~150 px 区间缩放,持续从右下角向中央略有位移;
@@ -76,12 +79,30 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private readonly PostMessageSimulator? _postMessageSimulator;
 
     private int _sequence;
-    private TemplateImage? _f2Template;
-    private TemplateImage? _dailySelTemplate;
-    private TemplateImage? _dailyNoSelTemplate;
-    private TemplateImage? _daliyUiTemplate;
-    private TemplateImage? _daliyGoTemplate;
-    private TemplateImage? _dialogOpt1Template;
+    // RunSeq* 失败时把 label 记到这里,OnCapture retreat 日志用 — 失败后 _sequence -= 1 再读 LogMiss 会拿到错 seq 数字
+    private string? _lastSeqLabel;
+    // 单层 retreat 状态:true = 当前段 miss 已 retreat 过 1 次,下一帧再 miss 直接全扫描(不再退)。
+    // hit / 全扫描跳 seq 后清 false。新一轮 OnCapture 开始是 false。
+    private bool _retreatUsed;
+    // 连续 retreat 检测:同一源 seq 连续 retreat 次数超阈值时暂停 trigger。
+    // 场景:seq=N 总 miss → retreat seq=M → seq=M 立即 hit → advance seq=N → seq=N 又 miss → ...
+    // _lastRetreatFromSeq = 上次 retreat 的源 seq,-1 = 无历史;源 seq 变化时 streak 自然重置为 1
+    private int _lastRetreatFromSeq = -1;
+    private int _retreatStreakCount;
+    private readonly TemplateWaitTarget _f2Target = new("F2", F2Path, MatchThreshold);
+    private readonly TemplateWaitTarget _dailySelTarget = new("DailySel", DailySelPath, MatchThreshold);
+    private readonly TemplateWaitTarget _dailyNoSelTarget = new("DailyNoSel", DailyNoSelPath, MatchThreshold);
+    private readonly TemplateWaitTarget _daliyUiTarget = new("DaliyUi", DaliyUiPath, MatchThreshold);
+    private readonly TemplateWaitTarget _daliyGoTarget = new("DaliyGo", DaliyGoPath, MatchThreshold);
+    private readonly TemplateWaitTarget _dialogOpt1Target = new("DialogOpt1", DialogOpt1Path, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd1Target = new("Rwd1", Rwd1Path, MatchThreshold);
+
+    // 全模板扫描集合(单帧 scan):OnCapture 在 _sequence == 0 失败时遍历,任一命中即跳对应 seq。
+    // 顺序影响优先级:F2 排第一 → 画面里同时有 F2 + 其他模板时先跳 seq 0(用户已确认)。
+    // DailySel/DailyNoSel 不进 — 它们是 RunSeqDailySel 内的副模板,不做序列跳转。
+    // ContinueArrow HSV 进 — 让 seq 4 可以从兜底扫描进入(不只依赖 seq 3 → 4 自然推进)。
+    // 必须是 instance 字段:C# 不允许 field initializer 引用 instance 字段(CS0236)。
+    private readonly (IZzzWaitTarget target, int seq)[] _scanTargets;
 
     public TestZzzTaskTrigger(
         Func<ZzzCaptureContent?> captureProvider,
@@ -91,33 +112,124 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         _overlay = overlay;
         _captureProvider = captureProvider;
         _postMessageSimulator = postMessageSimulator;
+
+        _scanTargets = new (IZzzWaitTarget target, int seq)[]
+        {
+            (_f2Target, 0),
+            (_daliyUiTarget, 1),
+            (_daliyGoTarget, 2),
+            (new HsvWaitTarget("ContinueArrow",
+                c => ZzzImageUtils.DetectArrowBlob(
+                    c.Image, ContinueArrowRoi,
+                    ContinueArrowSMax, ContinueArrowVMin,
+                    ContinueArrowMinArea, ContinueArrowMaxArea,
+                    ContinueArrowMinHeight,
+                    ContinueArrowMinAspect, ContinueArrowMinExtent,
+                    ContinueArrowMinLargestFraction, ContinueArrowMaxConvexity,
+                    ContinueArrowMaxLabels)), 4),
+            (_dialogOpt1Target, 5),
+            (_rwd1Target, 6),
+        };
     }
 
     public void OnCapture(ZzzCaptureContent content)
     {
         try
         {
-            switch (_sequence)
+            bool hit = _sequence switch
             {
-                case 0:
-                    RunSeqF2();
-                    break;
-                case 1:
-                    RunSeqDailySel();
-                    break;
-                case 2:
-                    RunSeqDailyGo();
-                    break;
-                case 3:
-                    RunSeqF();
-                    break;
-                case 4:
-                    RunSeqContinueArrow();
-                    break;
-                case 5:
-                    RunSeqDialogOpt1();
-                    break;
+                0 => RunSeqF2(),
+                1 => RunSeqDailySel(),
+                2 => RunSeqDailyGo(),
+                3 => RunSeqF(),
+                4 => RunSeqContinueArrow(),
+                5 => RunSeqDialogOpt1(),
+                6 => RunSeqRwd1(),
+                _ => false,  // _sequence 越界(idle)
+            };
+
+            if (hit)
+            {
+                _retreatUsed = false;
+                return;
             }
+
+            // 失败分支:
+            // - _sequence > 0 且未 retreat 过: retreat 1,下一帧重试 _sequence - 1
+            // - _sequence > 0 但已 retreat 过(_retreatUsed): 跳过 retreat,直接全扫描(避免一路退到 seq=0 浪费时间)
+            // - _sequence == 0: 直接全扫描
+            if (_sequence > 0)
+            {
+                if (_retreatUsed)
+                {
+                    _retreatUsed = false;
+                    _lastSeqLabel = null;
+                    Debug.WriteLine($"[ZZZ-Test] seq={_sequence} (after retreat) miss → scan recovery");
+                    // fall through to scan
+                }
+                else
+                {
+                    int prevSeq = _sequence;
+                    _sequence -= 1;
+                    _retreatUsed = true;
+
+                    // 累计 retreat streak:同一源 seq 连续 retreat → 可能卡死
+                    if (prevSeq == _lastRetreatFromSeq)
+                    {
+                        _retreatStreakCount++;
+                    }
+                    else
+                    {
+                        _retreatStreakCount = 1;
+                        _lastRetreatFromSeq = prevSeq;
+                    }
+
+                    // 同一源 retreat 超过阈值 → 暂停 trigger,避免空转(seq=N ↔ seq=M 无限循环)
+                    if (_retreatStreakCount > RetreatStreakPauseThreshold)
+                    {
+                        IsEnabled = false;
+                        Debug.WriteLine($"[ZZZ-Test] PAUSE: stuck retreating from seq={prevSeq}, streak={_retreatStreakCount}; IsEnabled=false (re-enable manually to resume)");
+                        _retreatUsed = false;
+                        _retreatStreakCount = 0;
+                        _lastRetreatFromSeq = -1;
+                        _lastSeqLabel = null;
+                        return;
+                    }
+
+                    Debug.WriteLine($"[ZZZ-Test] seq={prevSeq} ({_lastSeqLabel ?? "?"}) miss → retreat to seq={_sequence}");
+                    _lastSeqLabel = null;
+                    return;
+                }
+            }
+
+            // _sequence == 0 失败 → 全模板扫描
+            var (matchedLabel, scanContent) = ScanAllMainTemplates();
+            if (scanContent == null)
+            {
+                Debug.WriteLine("[ZZZ-Test] scan recovery: capture returned null (minimized?)");
+                return;
+            }
+            if (matchedLabel == null)
+            {
+                Debug.WriteLine("[ZZZ-Test] scan recovery: nothing matched, idle");
+                scanContent.Dispose();
+                return;
+            }
+
+            int targetSeq = matchedLabel switch
+            {
+                "F2" => 0,
+                "DaliyUi" => 1,
+                "DaliyGo" => 2,
+                "ContinueArrow" => 4,
+                "DialogOpt1" => 5,
+                "Rwd1" => 6,
+                _ => _sequence,
+            };
+            Debug.WriteLine($"[ZZZ-Test] scan recovery: hit label={matchedLabel} → seq={targetSeq}");
+            scanContent.Dispose();
+            _retreatUsed = false;
+            _sequence = targetSeq;
         }
         catch (Exception ex)
         {
@@ -126,171 +238,276 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     }
 
     /// <summary> seq 0: 等 F2 模板命中 → 按 F2 键(按 UseForegroundF2 切换前后台) </summary>
-    private void RunSeqF2()
+    private bool RunSeqF2()
     {
-        var (result, content) = WaitForHit(F2Path, ref _f2Template);
+        var (label, result, content) = WaitForHit(targets: _f2Target);
         if (result == null || content == null)
         {
-            LogMiss("seq0/F2");
-            return;
+            _lastSeqLabel = label ?? "seq0/F2";
+            LogMiss(_lastSeqLabel);
+            return false;
         }
+        _lastSeqLabel = null;
         DrawHitRect(result, content, "seq0/F2");
         PressKeyForeground(User32.VK.VK_F2, content);
         content.Dispose();
-        Advance("seq0/F2", nextSeq: _sequence+1);
+        Advance("seq0/F2");
+        return true;
     }
 
     /// <summary>
     /// seq 1: 等 daliyUi 菜单面板出现(同一帧上 match DailySelPath / DailyNoSelPath)。
-    /// - daliyUi 没出现 → 退回 seq 0
+    /// - daliyUi 没出现 → return false(OnCapture 收到失败后 retreat _sequence -= 1)
     /// - 出现后在该帧上 match 两个 daily 状态模板:
     ///   · DailyNoSelPath 命中 → 区域内随机点点击
     ///   · DailySelPath 命中或两者都没命中 → 什么也不做
     /// - 最后推进到 seq 2
     /// </summary>
-    private void RunSeqDailySel()
+    private bool RunSeqDailySel()
     {
-        var (uiResult, hitContent) = WaitForHit(DaliyUiPath, ref _daliyUiTemplate);
+        var (uiLabel, uiResult, hitContent) = WaitForHit(targets: _daliyUiTarget);
         if (uiResult == null || hitContent == null)
         {
-            Debug.WriteLine($"[ZZZ-Test] seq=1 (DaliyUi) miss → retreat to seq 0");
-            _sequence = 0;
-            return;
+            _lastSeqLabel = uiLabel ?? "seq1/DaliyUi";
+            LogMiss(_lastSeqLabel);
+            return false;
         }
+        _lastSeqLabel = null;
 
         DrawHitRect(uiResult, hitContent, "seq1/DaliyUi");
-        if (_dailyNoSelTemplate == null)
-            _dailyNoSelTemplate = TemplateImage.FromFile(DailyNoSelPath, MatchThreshold);
-        if (_dailySelTemplate == null)
-            _dailySelTemplate = TemplateImage.FromFile(DailySelPath, MatchThreshold);
 
-        var selResult = _dailySelTemplate.TryMatch(hitContent);
-        var noSelResult = _dailyNoSelTemplate.TryMatch(hitContent);
-        Debug.WriteLine($"[ZZZ-Test] seq=1 daily dual-match: noSel={noSelResult.Score:F3} sel={selResult.Score:F3}");
+        var selHit = _dailySelTarget.TryMatch(hitContent, out var selMatch);
+        var noSelHit = _dailyNoSelTarget.TryMatch(hitContent, out var noSelMatch);
+        Debug.WriteLine($"[ZZZ-Test] seq=1 daily dual-match: noSelHit={noSelHit} score={noSelMatch?.Score:F3} selHit={selHit} score={selMatch?.Score:F3}");
 
-        if (noSelResult.Score >= MatchThreshold)
+        if (noSelHit && noSelMatch != null)
         {
-            ClickMatchedArea(noSelResult, hitContent);
+            ClickMatchedArea(noSelMatch, hitContent);
         }
         hitContent.Dispose();
-        Advance("DailyMenu", nextSeq: 2);
+        Advance("DailyMenu");
+        return true;
     }
 
     /// <summary> seq 2: 等 daliyGo 模板命中 → 区域内随机点点击 → 推进 seq 3 </summary>
-    private void RunSeqDailyGo()
+    private bool RunSeqDailyGo()
     {
-        var (result, content) = WaitForHit(DaliyGoPath, ref _daliyGoTemplate);
+        var (label, result, content) = WaitForHit(targets: _daliyGoTarget);
         if (result == null || content == null)
         {
-            LogMiss("DailyGo");
-            return;
+            _lastSeqLabel = label ?? "seq2/DaliyGo";
+            LogMiss(_lastSeqLabel);
+            return false;
         }
+        _lastSeqLabel = null;
         DrawHitRect(result, content, "seq2/DaliyGo");
         ClickMatchedArea(result, content);
         content.Dispose();
-        Advance("DailyGo", nextSeq: 3);
+        Advance("DailyGo");
+        return true;
     }
 
     /// <summary>
     /// seq 3: 点完 DailyGo 进入对话框后,F2 按钮重新出现表示可以按 F 选择第一项对话选项。
     /// 命中后前台 SendInput 按 F。
     /// </summary>
-    private void RunSeqF()
+    private bool RunSeqF()
     {
-        var (result, content) = WaitForHit(F2Path, ref _f2Template);
+        var (label, result, content) = WaitForHit(targets: _f2Target);
         if (result == null || content == null)
         {
-            LogMiss("F");
-            return;
+            _lastSeqLabel = label ?? "seq3/F";
+            LogMiss(_lastSeqLabel);
+            return false;
         }
+        _lastSeqLabel = null;
         DrawHitRect(result, content, "seq3/F");
         PressKeyForeground(User32.VK.VK_F, content);
         content.Dispose();
-        Advance("F", nextSeq: 4);
+        Advance("F");
+        return true;
     }
 
     /// <summary>
-    /// seq 4: 等右下角"继续对话"箭头 (HSV 颜色掩膜 + 连通域形状过滤) 命中 → 按空格键 → 回环 seq 0。
-    /// 走 <see cref="HsvOverlayRunner.WaitForHsvAppear"/> 同步阻塞 3s 内多帧截图轮询,
-    /// 与 seq 0/1/2/3 的 <see cref="WaitForHit"/> 体感一致。
+    /// seq 4: 等右下角"继续对话"箭头 (HSV 颜色掩膜 + 连通域形状过滤) 命中 → 按空格键 → 推进 seq 5。
+    /// 走 <see cref="WaitForHit"/> + <see cref="HsvWaitTarget"/>,与其他段共享 3s 轮询预算 + captureProvider,
+    /// HSV 命中时 TemplateMatchResult 为 null,caller 走 HSV 专属画框 + 落盘逻辑。
     /// </summary>
-    private void RunSeqContinueArrow()
+    private bool RunSeqContinueArrow()
     {
-        var hitContent = HsvOverlayRunner.WaitForHsvAppear(
-            captureProvider: _captureProvider,
-            detector: c => ZzzImageUtils.DetectArrowBlob(
+        var (label, result, content) = WaitForHit(targets: new HsvWaitTarget("ContinueArrow",
+            c => ZzzImageUtils.DetectArrowBlob(
                 c.Image, ContinueArrowRoi,
                 ContinueArrowSMax, ContinueArrowVMin,
                 ContinueArrowMinArea, ContinueArrowMaxArea,
                 ContinueArrowMinHeight,
                 ContinueArrowMinAspect, ContinueArrowMinExtent,
                 ContinueArrowMinLargestFraction, ContinueArrowMaxConvexity,
-                ContinueArrowMaxLabels),
-            onHit: c =>
-            {
-                var safeRoi = ZzzImageUtils.ClampRoi(ContinueArrowRoi, c.Image.Width, c.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
-                    _overlay,
-                    new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
-                    c,
-                    "seq4/ContinueArrow");
+                ContinueArrowMaxLabels)));
 
-                // 把命中帧的 ROI 切片落盘,事后可肉眼比对 / 发给 Claude 验证是否真箭头
-                try
-                {
-                    var snapshotPath = ZzzImageUtils.SaveArrowRoiSnapshot(c.Image, ContinueArrowRoi, "test_seq4");
-                    Debug.WriteLine($"[ZZZ-Test] saved snapshot: {snapshotPath}");
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"[ZZZ-Test] snapshot save failed: {ex.GetType().Name}: {ex.Message}");
-                }
-            },
-            totalTimeoutMs: 3000);
-
-        if (hitContent == null)
+        if (content == null)
         {
-            LogMiss("ContinueArrow");
-            return;
+            _lastSeqLabel = label ?? "seq4/ContinueArrow";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+
+        var safeRoi = ZzzImageUtils.ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
+        ZzzTaskTriggerDispatcher.DrawMatchRect(
+            _overlay,
+            new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
+            content,
+            "seq4/ContinueArrow");
+
+        // 把命中帧的 ROI 切片落盘,事后可肉眼比对 / 发给 Claude 验证是否真箭头
+        try
+        {
+            var snapshotPath = ZzzImageUtils.SaveArrowRoiSnapshot(content.Image, ContinueArrowRoi, "test_seq4");
+            Debug.WriteLine($"[ZZZ-Test] saved snapshot: {snapshotPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ-Test] snapshot save failed: {ex.GetType().Name}: {ex.Message}");
         }
 
-        PressKeyForeground(User32.VK.VK_SPACE, hitContent);
-        Advance("ContinueArrow", nextSeq: 5);
+        PressKeyForeground(User32.VK.VK_SPACE, content);
+        content.Dispose();
+        Advance("ContinueArrow");
+        return true;
     }
 
     /// <summary>
     /// seq 5: ContinueArrow 按空格推进对话文本后,等对话框第一项的"①"指示图标出现 → 按数字键 1 选择第一项。
     /// 命中后前台 SendInput 按 VK_1。回到 seq 4 继续推进下一段文本。
     /// </summary>
-    private void RunSeqDialogOpt1()
+    private bool RunSeqDialogOpt1()
     {
-        var (result, content) = WaitForHit(DialogOpt1Path, ref _dialogOpt1Template);
+        var (label, result, content) = WaitForHit(targets: _dialogOpt1Target);
         if (result == null || content == null)
         {
-            LogMiss("DialogOpt1");
-            return;
+            _lastSeqLabel = label ?? "seq5/DialogOpt1";
+            LogMiss(_lastSeqLabel);
+            return false;
         }
+        _lastSeqLabel = null;
         DrawHitRect(result, content, "seq5/DialogOpt1");
-        // PressKeyForeground(User32.VK.VK_1, content);
+        PressKeyForeground(User32.VK.VK_1, content);
         content.Dispose();
-        Advance("DialogOpt1", nextSeq: 4);
+        Advance("DialogOpt1");  // 回环到 ContinueArrow,不走默认 +1
+        return true;
     }
 
     /// <summary>
-    /// 同步阻塞等模板出现,直接转发 <see cref="TemplateOverlayRunner.WaitForTemplateAppear"/>。
-    /// WaitForTemplateAppear 是同步的(最多 3s 轮询),不需要 callback 模式 — caller 拿到 tuple
-    /// 后自己画框 / 做动作 / Dispose content。
-    /// 返回 (null, null) = 超时 / 模板加载失败。命中 / 未命中日志由 caller 决定。
+    /// seq 6: 奖励弹窗 (rwd1) 出现 → 命中后只 log(具体动作按用户后续指示补)。
     /// </summary>
-    private (TemplateMatchResult? result, ZzzCaptureContent? content) WaitForHit(
-        string path,
-        ref TemplateImage? template)
+    private bool RunSeqRwd1()
     {
-        return TemplateOverlayRunner.WaitForTemplateAppear(
-            captureProvider: _captureProvider,
-            templateRelativePath: path,
-            template: ref template,
-            threshold: MatchThreshold);
+        var (label, result, content) = WaitForHit(targets: _rwd1Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq6/Rwd1";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq6/Rwd1");
+        content.Dispose();
+        Advance("seq6/Rwd1");
+        return true;
+    }
+
+    /// <summary>
+    /// 同步阻塞等任意 target 命中。在 <paramref name="totalTimeoutMs"/> 内最多尝试 <paramref name="maxAttempts"/> 次,
+    /// 每次通过 <see cref="_captureProvider"/> 拉新一帧,遍历 <paramref name="targets"/> 顺序 TryMatch,
+    /// 任一命中即返回(matchedLabel + TemplateMatchResult? + content)。
+    ///
+    /// 捕获失败(<see cref="_captureProvider"/> 返回 null)不计入尝试次数、不消耗 sleep。
+    /// 命中分支:TemplateMatchResult? 仅在模板命中时非 null(给 DrawHitRect 用);HSV 命中为 null(caller 走 HSV 专属画框)。
+    /// 全部未命中 / 任一 target 模板加载失败 → (null, null, null),内部已 Dispose 中间帧。
+    ///
+    /// 同步阻塞:单次调用最长占用 totalTimeoutMs。caller 负责在收到非 null content 后 Dispose。
+    /// </summary>
+    private (string? matchedLabel, TemplateMatchResult? result, ZzzCaptureContent? content) WaitForHit(
+        int totalTimeoutMs = 3000,
+        int maxAttempts = 3,
+        params IZzzWaitTarget[] targets)
+    {
+        if (targets == null || targets.Length == 0)
+        {
+            return (null, null, null);
+        }
+
+        if (maxAttempts < 1 || totalTimeoutMs <= 0)
+        {
+            return (null, null, null);
+        }
+
+        var intervalMs = maxAttempts > 1 ? totalTimeoutMs / (maxAttempts - 1) : totalTimeoutMs;
+        var startMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency;
+        var deadlineMs = startMs + totalTimeoutMs;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var nowMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency;
+            if (nowMs > deadlineMs)
+            {
+                break;
+            }
+
+            ZzzCaptureContent? content;
+            try
+            {
+                content = _captureProvider();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ZZZ-Wait] attempt {attempt}/{maxAttempts}: capture provider threw: {ex.GetType().Name}: {ex.Message}");
+                content = null;
+            }
+
+            if (content == null)
+            {
+                Debug.WriteLine($"[ZZZ-Wait] attempt {attempt}/{maxAttempts}: capture returned null (minimized?)");
+            }
+            else
+            {
+                foreach (var target in targets)
+                {
+                    bool hit;
+                    TemplateMatchResult? matchResult;
+                    try
+                    {
+                        hit = target.TryMatch(content, out matchResult);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[ZZZ-Wait] attempt {attempt}/{maxAttempts}: {target.Label} TryMatch threw: {ex.GetType().Name}: {ex.Message}");
+                        continue;
+                    }
+
+                    if (hit)
+                    {
+                        Debug.WriteLine($"[ZZZ-Wait] attempt {attempt}/{maxAttempts}: HIT type={(matchResult != null ? "template" : "hsv")} label={target.Label}{FormatMatchDetail(matchResult, target.Threshold)}");
+                        return (target.Label, matchResult, content);
+                    }
+
+                    // per-target miss log:score + threshold 直观看离命中差多远
+                    Debug.WriteLine($"[ZZZ-Wait] attempt {attempt}/{maxAttempts}: {target.Label} miss{FormatMatchDetail(matchResult, target.Threshold)}");
+                }
+
+                content.Dispose();
+            }
+
+            if (attempt < maxAttempts)
+            {
+                Thread.Sleep(intervalMs);
+            }
+        }
+
+        var totalMs = Stopwatch.GetTimestamp() * 1000L / Stopwatch.Frequency - startMs;
+        Debug.WriteLine($"[ZZZ-Wait] budget exhausted: attempts={maxAttempts} elapsed={totalMs}ms targets=[{string.Join(",", System.Linq.Enumerable.Select(targets, t => t.Label))}]");
+        return (null, null, null);
     }
 
     /// <summary>
@@ -301,6 +518,17 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         var abs = result.AbsRect;
         var rect = new System.Drawing.Rectangle(abs.X, abs.Y, abs.Width, abs.Height);
         ZzzTaskTriggerDispatcher.DrawMatchRect(_overlay, rect, content, $"{label} hit {result.Score:F3}");
+    }
+
+    /// <summary>
+    /// 格式化 score + threshold 给日志用。
+    /// 模板命中/未命中 → " score=0.583 threshold=0.960";HSV → " hsv detector"。
+    /// </summary>
+    private static string FormatMatchDetail(TemplateMatchResult? result, double? threshold)
+    {
+        var s = result != null ? $" score={result.Score:F3}" : "";
+        var t = threshold.HasValue ? $" threshold={threshold.Value:F3}" : " hsv detector";
+        return $"{s}{t}";
     }
 
     /// <summary>
@@ -380,8 +608,9 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         Simulation.SendInput.Mouse.LeftButtonClick();
     }
 
-    private void Advance(string fromLabel, int nextSeq)
+    private void Advance(string fromLabel, int nextSeq = -1)
     {
+        if (nextSeq < 0) nextSeq = _sequence + 1;
         Debug.WriteLine($"[ZZZ-Test] seq={_sequence} ({fromLabel}) hit → next seq={nextSeq}");
         _sequence = nextSeq;
     }
@@ -391,15 +620,67 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         Debug.WriteLine($"[ZZZ-Test] seq={_sequence} ({label}) miss → stay");
     }
 
+    /// <summary>
+    /// 全模板扫描兜底:在 _sequence == 0 失败时由 OnCapture 调用。
+    /// 单帧拉一帧 capture,顺序遍历 _scanTargets,任一命中即返回(matchedLabel + content 给 caller Dispose);
+    /// 全 miss 则 Dispose content + 返回 (null, null)。
+    ///
+    /// 同步阻塞:单次 capture + N 次 TryMatch,不轮询、不 sleep,通常 < 50ms 完成。
+    /// </summary>
+    private (string? matchedLabel, ZzzCaptureContent? content) ScanAllMainTemplates()
+    {
+        Debug.WriteLine($"[ZZZ-Test] scan recovery: starting single-frame scan, targets=[{string.Join(",", System.Linq.Enumerable.Select(_scanTargets, t => t.target.Label))}]");
+
+        ZzzCaptureContent? content;
+        try
+        {
+            content = _captureProvider();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ-Test] scan recovery: capture threw: {ex.GetType().Name}: {ex.Message}");
+            return (null, null);
+        }
+        if (content == null)
+        {
+            Debug.WriteLine("[ZZZ-Test] scan recovery: capture returned null (minimized?)");
+            return (null, null);
+        }
+
+        foreach (var (target, seq) in _scanTargets)
+        {
+            bool hit;
+            TemplateMatchResult? result;
+            try
+            {
+                hit = target.TryMatch(content, out result);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[ZZZ-Test] scan recovery: {target.Label} TryMatch threw: {ex.GetType().Name}: {ex.Message}");
+                continue;
+            }
+            if (hit)
+            {
+                Debug.WriteLine($"[ZZZ-Test] scan recovery: HIT type={(result != null ? "template" : "hsv")} label={target.Label}{FormatMatchDetail(result, target.Threshold)}");
+                return (target.Label, content);
+            }
+            Debug.WriteLine($"[ZZZ-Test] scan recovery: check label={target.Label} miss{FormatMatchDetail(result, target.Threshold)}");
+        }
+
+        Debug.WriteLine($"[ZZZ-Test] scan recovery: nothing matched ({_scanTargets.Length} targets checked)");
+        content.Dispose();
+        return (null, null);
+    }
+
     public void Dispose()
     {
-        _f2Template?.Template.Dispose();
-        _f2Template = null;
-        _dailySelTemplate?.Template.Dispose();
-        _dailySelTemplate = null;
-        _daliyGoTemplate?.Template.Dispose();
-        _daliyGoTemplate = null;
-        _dialogOpt1Template?.Template.Dispose();
-        _dialogOpt1Template = null;
+        _f2Target.Dispose();
+        _dailySelTarget.Dispose();
+        _dailyNoSelTarget.Dispose();
+        _daliyUiTarget.Dispose();
+        _daliyGoTarget.Dispose();
+        _dialogOpt1Target.Dispose();
+        _rwd1Target.Dispose();
     }
 }
