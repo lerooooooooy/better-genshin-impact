@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Core.Simulator.Extensions;
 using BetterGenshinImpact.View.Windows;
@@ -48,8 +49,58 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private const string DailyNoSelPath = "Assets\\Template\\Daily\\daliyNoSel_926_158_129x43.png";
     private const string DaliyUiPath = "Assets\\Template\\Daily\\daliyUi_1701_221_54x290.png";
     private const string DaliyGoPath = "Assets\\Template\\Daily\\daliyGo_871_843_181x47.png";
+    // 日常完成度判断(嵌入 RunSeqDailySel,不在独立 seq):
+    // - daliyFin:capture (1541, 264),59x79 — 绿色"已完成"标记
+    // - daliyReach:capture (832, 865),162x40 — 灰色"已达成待领取"标记
+    private const string DaliyFinPath = "Assets\\Template\\Daily\\daliyFin_1541_264_59x79.png";
+    private const string DaliyReachPath = "Assets\\Template\\Daily\\daliyReach_832_865_162x40.png";
+    // daliyReach 命中后点击领取按钮:(1469, 257, 163x79)
+    private static readonly CvRect DaliyClaimClickRect = new(1469, 257, 163, 79);
     private const string DialogOpt1Path = "Assets\\Template\\Daily\\dialogOpt1_1391_573_16x29_200.png";
     private const string Rwd1Path = "Assets\\Template\\Daily\\rwd1_1161_510_74x58_400.png";
+    private const string GetBatteryPath = "Assets\\Template\\Daily\\getBattery_907_464_105x105.png";
+    // 领取电池弹窗的"已领取/确认"按钮区域:固定位置,跟 getBattery 模板(907,464)无关。
+    // 在矩形内随机点,避免重复同一坐标被检测。
+    private static readonly CvRect GetBatteryClickRect = new(854, 709, 203, 37);
+    // "rin" 红色 logo 模板 (rwd2):capture 位置 (1013, 632),尺寸 201x119,无缩放后缀。
+    private const string RinPath = "Assets\\Template\\Daily\\rwd2_1013_632_201x119.png";
+    // rwd3 模板:capture 位置 (1047, 662),尺寸 112x96,无缩放后缀。
+    private const string Rwd3Path = "Assets\\Template\\Daily\\rwd3_1047_662_112x96.png";
+    // rwd4 模板:capture 位置 (927, 406),尺寸 63x33,无缩放后缀。
+    private const string Rwd4Path = "Assets\\Template\\Daily\\rwd4_927_406_63x33.png";
+    // rwd5 模板:capture 位置 (934, 855),尺寸 56x26,无缩放后缀。"明日" 文字 + 旁边奖励信息。
+    private const string Rwd5Path = "Assets\\Template\\Daily\\rwd5_934_855_56x26.png";
+    // rwd6 模板:capture 位置 (1257, 955),尺寸 121x34,无缩放后缀。
+    private const string Rwd6Path = "Assets\\Template\\Daily\\rwd6_1257_955_121x34.png";
+    // rwd7 模板:capture 位置 (543, 233),尺寸 115x29,无缩放后缀。上方垂直条纹 — 结束/过渡遮罩。
+    private const string Rwd7Path = "Assets\\Template\\Daily\\rwd7_543_233_115x29.png";
+    // shop2 模板:capture 位置 (845, 575),尺寸 115x22,无缩放后缀。
+    // 点击区 (829,642,145x228) 在模板正下方,跟 shop2 模板位置无关 — 固定 UI 按钮区。
+    private const string Shop2Path = "Assets\\Template\\Daily\\shop2_845_575_115x22.png";
+    private static readonly CvRect Shop2ClickRect = new(829, 642, 145, 228);
+    // shop3 模板:capture 位置 (68, 1012),尺寸 118x29,无缩放后缀。
+    // 点击区 (1605,1008,204x38) 在右下角,跟 shop3 模板(左下)无关 — 固定 UI 按钮区。
+    private const string Shop3Path = "Assets\\Template\\Daily\\shop3_68_1012_118x29.png";
+    private static readonly CvRect Shop3ClickRect = new(1605, 1008, 204, 38);
+    // shop4 模板:capture 位置 (1056, 630),尺寸 90x228,无缩放后缀。
+    // 命中后点击模板匹配框内随机一点(模板本身就是按钮,无需独立 ROI)。
+    private const string Shop4Path = "Assets\\Template\\Daily\\shop4_1056_630_90x228.png";
+    // shop5 模板:capture 位置 (1282, 1010),尺寸 187x34,无缩放后缀。
+    // 命中后点击模板匹配框内随机一点(模板本身就是要点的按钮,无需独立 ROI)。
+    private const string Shop5Path = "Assets\\Template\\Daily\\shop5_1282_1010_187x34.png";
+    // shop6 模板:capture 位置 (1546, 955),尺寸 244x34,无缩放后缀。
+    // 命中后点击模板匹配框内随机一点(模板本身就是要点的按钮,无需独立 ROI)。
+    private const string Shop6Path = "Assets\\Template\\Daily\\shop6_1546_955_244x34.png";
+    // "准备营业" 文字 OCR 检测:capture 区域 (912, 498),尺寸 123x52。
+    // 命中后点击固定 UI 区域 (1029, 606, 188x36)(跟 OCR 区域无关 — 固定按钮位置)。
+    private static readonly CvRect ReadyToOpenRoi = new(912, 498, 123, 52);
+    private static readonly CvRect ReadyToOpenClickRect = new(1029, 606, 188, 36);
+    private const string ReadyToOpenText = "准备营业";
+    // "诚信经营" 文字 OCR 检测:capture 区域 (811, 507),尺寸 124x36。
+    // 命中后点击固定 UI 区域 (846, 604, 218x42)(跟 OCR 区域无关 — 固定按钮位置)。
+    private static readonly CvRect HonestBusinessRoi = new(811, 507, 124, 36);
+    private static readonly CvRect HonestBusinessClickRect = new(846, 604, 218, 42);
+    private const string HonestBusinessText = "诚信经营";
 
     // 继续对话箭头 »» (屏幕最右下角):半透明白灰(无彩色 + 高亮度)。
     // 动画过程中箭头会在 ~30~150 px 区间缩放,持续从右下角向中央略有位移;
@@ -94,8 +145,24 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private readonly TemplateWaitTarget _dailyNoSelTarget = new("DailyNoSel", DailyNoSelPath, MatchThreshold);
     private readonly TemplateWaitTarget _daliyUiTarget = new("DaliyUi", DaliyUiPath, MatchThreshold);
     private readonly TemplateWaitTarget _daliyGoTarget = new("DaliyGo", DaliyGoPath, MatchThreshold);
+    private readonly TemplateWaitTarget _daliyFinTarget = new("DaliyFin", DaliyFinPath, MatchThreshold);
+    private readonly TemplateWaitTarget _daliyReachTarget = new("DaliyReach", DaliyReachPath, MatchThreshold);
     private readonly TemplateWaitTarget _dialogOpt1Target = new("DialogOpt1", DialogOpt1Path, MatchThreshold);
     private readonly TemplateWaitTarget _rwd1Target = new("Rwd1", Rwd1Path, MatchThreshold);
+    private readonly TemplateWaitTarget _getBatteryTarget = new("GetBattery", GetBatteryPath, MatchThreshold);
+    private readonly TemplateWaitTarget _rinTarget = new("Rin", RinPath, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd3Target = new("Rwd3", Rwd3Path, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd4Target = new("Rwd4", Rwd4Path, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd5Target = new("Rwd5", Rwd5Path, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd6Target = new("Rwd6", Rwd6Path, MatchThreshold);
+    private readonly TemplateWaitTarget _rwd7Target = new("Rwd7", Rwd7Path, MatchThreshold);
+    private readonly TemplateWaitTarget _shop2Target = new("Shop2", Shop2Path, MatchThreshold);
+    private readonly TemplateWaitTarget _shop3Target = new("Shop3", Shop3Path, MatchThreshold);
+    private readonly TemplateWaitTarget _shop4Target = new("Shop4", Shop4Path, MatchThreshold);
+    private readonly TemplateWaitTarget _shop5Target = new("Shop5", Shop5Path, MatchThreshold);
+    private readonly TemplateWaitTarget _shop6Target = new("Shop6", Shop6Path, MatchThreshold);
+    private readonly OcrWaitTarget _readyToOpenTarget = new("ReadyToOpen", ReadyToOpenRoi, ReadyToOpenText);
+    private readonly OcrWaitTarget _honestBusinessTarget = new("HonestBusiness", HonestBusinessRoi, HonestBusinessText);
 
     // 全模板扫描集合(单帧 scan):OnCapture 在 _sequence == 0 失败时遍历,任一命中即跳对应 seq。
     // 顺序影响优先级:F2 排第一 → 画面里同时有 F2 + 其他模板时先跳 seq 0(用户已确认)。
@@ -128,7 +195,21 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     ContinueArrowMinLargestFraction, ContinueArrowMaxConvexity,
                     ContinueArrowMaxLabels)), 4),
             (_dialogOpt1Target, 5),
-            (_rwd1Target, 6),
+            (_rwd6Target, 6),
+            (_rwd1Target, 7),
+            (_getBatteryTarget, 8),
+            (_rinTarget, 9),
+            (_rwd3Target, 10),
+            (_rwd4Target, 11),
+            (_rwd5Target, 12),
+            (_rwd7Target, 13),
+            (_shop2Target, 14),
+            (_shop3Target, 15),
+            (_shop4Target, 16),
+            (_shop5Target, 17),
+            (_shop6Target, 18),
+            (_readyToOpenTarget, 19),
+            (_honestBusinessTarget, 20),
         };
     }
 
@@ -144,7 +225,21 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                 3 => RunSeqF(),
                 4 => RunSeqContinueArrow(),
                 5 => RunSeqDialogOpt1(),
-                6 => RunSeqRwd1(),
+                6 => RunSeqRwd6(),
+                7 => RunSeqRwd1(),
+                8 => RunSeqGetBattery(),
+                9 => RunSeqRin(),
+                10 => RunSeqRwd3(),
+                11 => RunSeqRwd4(),
+                12 => RunSeqRwd5(),
+                13 => RunSeqRwd7(),
+                14 => RunSeqShop2(),
+                15 => RunSeqShop3(),
+                16 => RunSeqShop4(),
+                17 => RunSeqShop5(),
+                18 => RunSeqShop6(),
+                19 => RunSeqReadyToOpen(),
+                20 => RunSeqHonestBusiness(),
                 _ => false,  // _sequence 越界(idle)
             };
 
@@ -223,7 +318,21 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                 "DaliyGo" => 2,
                 "ContinueArrow" => 4,
                 "DialogOpt1" => 5,
-                "Rwd1" => 6,
+                "Rwd6" => 6,
+                "Rwd1" => 7,
+                "GetBattery" => 8,
+                "Rin" => 9,
+                "Rwd3" => 10,
+                "Rwd4" => 11,
+                "Rwd5" => 12,
+                "Rwd7" => 13,
+                "Shop2" => 14,
+                "Shop3" => 15,
+                "Shop4" => 16,
+                "Shop5" => 17,
+                "Shop6" => 18,
+                "ReadyToOpen" => 19,
+                "HonestBusiness" => 20,
                 _ => _sequence,
             };
             Debug.WriteLine($"[ZZZ-Test] scan recovery: hit label={matchedLabel} → seq={targetSeq}");
@@ -285,6 +394,54 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             ClickMatchedArea(noSelMatch, hitContent);
         }
         hitContent.Dispose();
+
+        // 日常完成度判断(嵌入,不独立 seq):
+        // - daliyFin 命中 → 日常已完成(已领取),整个 trigger 退出
+        // - daliyReach 命中 → 日常已完成但未领取,点击 (1469,257,163x79) 领取后继续 seq 2
+        // - 都没命中 → 继续 seq 2
+        ZzzCaptureContent? checkContent;
+        try
+        {
+            checkContent = _captureProvider();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ-Test] daily completion check: capture threw: {ex.GetType().Name}: {ex.Message}");
+            checkContent = null;
+        }
+
+        if (checkContent != null)
+        {
+            bool finHit = _daliyFinTarget.TryMatch(checkContent, out var finMatch);
+            if (finHit)
+            {
+                Debug.WriteLine("[ZZZ-Test] daily completion check: DaliyFin hit → daily complete, exiting trigger");
+                if (finMatch != null)
+                {
+                    DrawHitRect(finMatch, checkContent, "DailyFin");
+                }
+                checkContent.Dispose();
+                IsEnabled = false;
+                return true;
+            }
+
+            bool reachHit = _daliyReachTarget.TryMatch(checkContent, out var reachMatch);
+            if (reachHit)
+            {
+                Debug.WriteLine("[ZZZ-Test] daily completion check: DaliyReach hit → clicking claim area");
+                if (reachMatch != null)
+                {
+                    DrawHitRect(reachMatch, checkContent, "DailyReach");
+                }
+                ClickRect(checkContent, DaliyClaimClickRect);
+                checkContent.Dispose();
+                Advance("DailyMenu");
+                return true;
+            }
+
+            checkContent.Dispose();
+        }
+
         Advance("DailyMenu");
         return true;
     }
@@ -399,21 +556,319 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     }
 
     /// <summary>
-    /// seq 6: 奖励弹窗 (rwd1) 出现 → 命中后只 log(具体动作按用户后续指示补)。
+    /// seq 6: rwd6 模板出现 → 命中后按 ESC 键(与其他 ESC 段同行为)。
+    /// </summary>
+    private bool RunSeqRwd6()
+    {
+        var (label, result, content) = WaitForHit(targets: _rwd6Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq6/Rwd6";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq6/Rwd6");
+        PressKeyForeground(User32.VK.VK_ESCAPE, content);
+        content.Dispose();
+        Advance("seq6/Rwd6");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 7: 奖励弹窗 (rwd1) 出现 → 命中后点击 rwd1 模板匹配框内随机一点(尝试关闭弹窗)。
     /// </summary>
     private bool RunSeqRwd1()
     {
         var (label, result, content) = WaitForHit(targets: _rwd1Target);
         if (result == null || content == null)
         {
-            _lastSeqLabel = label ?? "seq6/Rwd1";
+            _lastSeqLabel = label ?? "seq7/Rwd1";
             LogMiss(_lastSeqLabel);
             return false;
         }
         _lastSeqLabel = null;
-        DrawHitRect(result, content, "seq6/Rwd1");
+        DrawHitRect(result, content, "seq7/Rwd1");
+        ClickMatchedArea(result, content);
         content.Dispose();
-        Advance("seq6/Rwd1");
+        Advance("seq7/Rwd1");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 8: 领取电池弹窗 (getBattery) 出现 → 命中后点击固定"已领取"按钮区 (854,709,203x37) 内随机一点。
+    /// </summary>
+    private bool RunSeqGetBattery()
+    {
+        var (label, result, content) = WaitForHit(targets: _getBatteryTarget);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq8/GetBattery";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq8/GetBattery");
+        ClickRect(content, GetBatteryClickRect);
+        content.Dispose();
+        Advance("seq8/GetBattery");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 9: "rin" 红色 logo 出现 → 命中后点击 rin 模板匹配框内随机一点。
+    /// </summary>
+    private bool RunSeqRin()
+    {
+        var (label, result, content) = WaitForHit(targets: _rinTarget);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq9/Rin";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq9/Rin");
+        ClickMatchedArea(result, content);
+        content.Dispose();
+        Advance("seq9/Rin");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 10: rwd3 模板出现 → 命中后点击匹配框内随机一点。
+    /// </summary>
+    private bool RunSeqRwd3()
+    {
+        var (label, result, content) = WaitForHit(targets: _rwd3Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq10/Rwd3";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq10/Rwd3");
+        ClickMatchedArea(result, content);
+        content.Dispose();
+        Advance("seq10/Rwd3");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 11: rwd4 模板出现 → 命中后按 ESC 键(尝试关闭弹窗/退出当前状态)。
+    /// </summary>
+    private bool RunSeqRwd4()
+    {
+        var (label, result, content) = WaitForHit(targets: _rwd4Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq11/Rwd4";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq11/Rwd4");
+        PressKeyForeground(User32.VK.VK_ESCAPE, content);
+        content.Dispose();
+        Advance("seq11/Rwd4");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 12: rwd5 模板出现 → 命中后按 ESC 键(与 seq 11 rwd4 同行为)。
+    /// </summary>
+    private bool RunSeqRwd5()
+    {
+        var (label, result, content) = WaitForHit(targets: _rwd5Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq12/Rwd5";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq12/Rwd5");
+        PressKeyForeground(User32.VK.VK_ESCAPE, content);
+        content.Dispose();
+        Advance("seq12/Rwd5");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 13: rwd7 模板出现 → 命中后按 ESC 键(结束/过渡遮罩,典型 ESC 关闭行为)。
+    /// </summary>
+    private bool RunSeqRwd7()
+    {
+        var (label, result, content) = WaitForHit(targets: _rwd7Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq13/Rwd7";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq13/Rwd7");
+        PressKeyForeground(User32.VK.VK_ESCAPE, content);
+        content.Dispose();
+        Advance("seq13/Rwd7");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 14: shop2 模板出现 → 命中后点击固定 UI 区域 (829, 642, 145x228)(模板正下方的按钮)。
+    /// </summary>
+    private bool RunSeqShop2()
+    {
+        var (label, result, content) = WaitForHit(targets: _shop2Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq14/Shop2";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq14/Shop2");
+        ClickRect(content, Shop2ClickRect);
+        content.Dispose();
+        Advance("seq14/Shop2");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 15: shop3 模板出现 → 命中后点击右下角固定 UI 区域 (1605, 1008, 204x38)(模板在左下,点击在右下)。
+    /// </summary>
+    private bool RunSeqShop3()
+    {
+        var (label, result, content) = WaitForHit(targets: _shop3Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq15/Shop3";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq15/Shop3");
+        ClickRect(content, Shop3ClickRect);
+        content.Dispose();
+        Advance("seq15/Shop3");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 16: shop4 模板出现 → 命中后点击模板匹配框内随机一点(模板本身就是要点的按钮)。
+    /// </summary>
+    private bool RunSeqShop4()
+    {
+        var (label, result, content) = WaitForHit(targets: _shop4Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq16/Shop4";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq16/Shop4");
+        ClickMatchedArea(result, content);
+        content.Dispose();
+        Advance("seq16/Shop4");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 17: shop5 模板出现 → 命中后点击模板匹配框内随机一点(模板本身就是要点的按钮)。
+    /// </summary>
+    private bool RunSeqShop5()
+    {
+        var (label, result, content) = WaitForHit(targets: _shop5Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq17/Shop5";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq17/Shop5");
+        ClickMatchedArea(result, content);
+        content.Dispose();
+        Advance("seq17/Shop5");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 18: shop6 模板出现 → 命中后点击模板匹配框内随机一点(模板本身就是要点的按钮)。
+    /// </summary>
+    private bool RunSeqShop6()
+    {
+        var (label, result, content) = WaitForHit(targets: _shop6Target);
+        if (result == null || content == null)
+        {
+            _lastSeqLabel = label ?? "seq18/Shop6";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+        DrawHitRect(result, content, "seq18/Shop6");
+        ClickMatchedArea(result, content);
+        content.Dispose();
+        Advance("seq18/Shop6");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 19: 在 (912, 498, 123x52) ROI 内 OCR 检测到"准备营业"文本 → 命中后点击 (1029, 606, 188x36) 固定区域。
+    /// 走 <see cref="WaitForHit"/> + <see cref="OcrWaitTarget"/>,与 HSV 路径同形 — OCR 命中时 TemplateMatchResult 为 null,
+    /// 用 ROI 矩形画框。
+    /// </summary>
+    private bool RunSeqReadyToOpen()
+    {
+        var (label, result, content) = WaitForHit(targets: _readyToOpenTarget);
+        if (content == null)
+        {
+            _lastSeqLabel = label ?? "seq19/ReadyToOpen";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+
+        var safeRoi = ZzzImageUtils.ClampRoi(ReadyToOpenRoi, content.Image.Width, content.Image.Height);
+        ZzzTaskTriggerDispatcher.DrawMatchRect(
+            _overlay,
+            new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
+            content,
+            "seq19/ReadyToOpen");
+
+        ClickRect(content, ReadyToOpenClickRect);
+        content.Dispose();
+        Advance("seq19/ReadyToOpen");
+        return true;
+    }
+
+    /// <summary>
+    /// seq 20: 在 (811, 507, 124x36) ROI 内 OCR 检测到"诚信经营"文本 → 命中后点击 (846, 604, 218x42) 固定区域。
+    /// 与 seq 19 ReadyToOpen 完全同模式。
+    /// </summary>
+    private bool RunSeqHonestBusiness()
+    {
+        var (label, result, content) = WaitForHit(targets: _honestBusinessTarget);
+        if (content == null)
+        {
+            _lastSeqLabel = label ?? "seq20/HonestBusiness";
+            LogMiss(_lastSeqLabel);
+            return false;
+        }
+        _lastSeqLabel = null;
+
+        var safeRoi = ZzzImageUtils.ClampRoi(HonestBusinessRoi, content.Image.Width, content.Image.Height);
+        ZzzTaskTriggerDispatcher.DrawMatchRect(
+            _overlay,
+            new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
+            content,
+            "seq20/HonestBusiness");
+
+        ClickRect(content, HonestBusinessClickRect);
+        content.Dispose();
+        Advance("seq20/HonestBusiness");
         return true;
     }
 
@@ -583,6 +1038,23 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         ClickAt(hitContent, randX, randY);
     }
 
+    /// <summary>
+    /// 鼠标动作:SendInput 点击给定 capture 坐标矩形内随机一点。
+    /// 与 <see cref="ClickMatchedArea"/> 的区别:点击位置来自调用方指定的固定 UI 区域,
+    /// 而非模板匹配的 absRect(用于匹配框 ≠ 实际按钮位置的场景,如 getBattery 弹窗)。
+    /// </summary>
+    private void ClickRect(ZzzCaptureContent hitContent, CvRect rect)
+    {
+        if (User32.GetForegroundWindow() != hitContent.Hwnd)
+        {
+            SystemControl.ActivateWindow(hitContent.Hwnd);
+        }
+        Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
+        var randX = rect.X + _rng.Next(0, Math.Max(1, rect.Width));
+        var randY = rect.Y + _rng.Next(0, Math.Max(1, rect.Height));
+        ClickAt(hitContent, randX, randY);
+    }
+
     private static void ClickAt(ZzzCaptureContent hitContent, int captureX, int captureY)
     {
         var captureRect = hitContent.CaptureRect;
@@ -680,7 +1152,23 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         _dailyNoSelTarget.Dispose();
         _daliyUiTarget.Dispose();
         _daliyGoTarget.Dispose();
+        _daliyFinTarget.Dispose();
+        _daliyReachTarget.Dispose();
         _dialogOpt1Target.Dispose();
         _rwd1Target.Dispose();
+        _getBatteryTarget.Dispose();
+        _rinTarget.Dispose();
+        _rwd3Target.Dispose();
+        _rwd4Target.Dispose();
+        _rwd5Target.Dispose();
+        _rwd6Target.Dispose();
+        _rwd7Target.Dispose();
+        _shop2Target.Dispose();
+        _shop3Target.Dispose();
+        _shop4Target.Dispose();
+        _shop5Target.Dispose();
+        _shop6Target.Dispose();
+        _readyToOpenTarget.Dispose();
+        _honestBusinessTarget.Dispose();
     }
 }

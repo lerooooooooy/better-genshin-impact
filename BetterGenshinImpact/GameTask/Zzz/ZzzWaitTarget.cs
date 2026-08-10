@@ -1,5 +1,8 @@
 using System;
 using System.Diagnostics;
+using BetterGenshinImpact.Core.Recognition.OCR;
+using OpenCvSharp;
+using CvRect = OpenCvSharp.Rect;
 
 namespace BetterGenshinImpact.GameTask.Zzz;
 
@@ -108,5 +111,47 @@ public sealed class HsvWaitTarget : IZzzWaitTarget
             Debug.WriteLine($"[ZZZ-Wait] {Label} detector threw: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
+    }
+}
+
+/// <summary>
+/// OCR 文本 target:在固定 ROI 内跑 PaddleOCR,任一 region 文本含 <see cref="_targetText"/> 子串即命中。
+/// 不做 score 阈值过滤(由 PaddleOCR 自身置信度决定),与 AutoSkipTrigger 现有 FindRectByText 用法一致。
+/// 命中时 <c>templateResult</c> 始终为 null(caller 走 ROI 画框路径,与 HsvWaitTarget 相同)。
+/// </summary>
+public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
+{
+    public string Label { get; }
+    public double? Threshold => null;
+
+    private readonly CvRect _roi;
+    private readonly string _targetText;
+
+    public OcrWaitTarget(string label, CvRect roi, string targetText)
+    {
+        Label = label;
+        _roi = roi;
+        _targetText = targetText;
+    }
+
+    public bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult)
+    {
+        templateResult = null;
+        try
+        {
+            var safeRoi = ZzzImageUtils.ClampRoi(_roi, content.Image.Width, content.Image.Height);
+            using var sub = new Mat(content.Image, safeRoi);
+            var ocr = OcrFactory.Paddle.OcrResult(sub);
+            return ocr.RegionHasText(_targetText);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ZZZ-Wait] {Label} OCR threw: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
     }
 }
