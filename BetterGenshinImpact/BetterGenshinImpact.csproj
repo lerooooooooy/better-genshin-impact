@@ -219,6 +219,18 @@
 		<None Update="GameTask\Common\Element\Assets\1920x1080\in_domain.png">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="GameTask\Zzz\Template\Common\daliyF2_1538_116_36x24_200.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\daliyGo_871_843_181x47.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\daliyNoSel_926_158_129x43.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\daliySel_916_145_143x60.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 		<None Update="GameTask\AutoDomain\Assets\1920x1080\**">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>

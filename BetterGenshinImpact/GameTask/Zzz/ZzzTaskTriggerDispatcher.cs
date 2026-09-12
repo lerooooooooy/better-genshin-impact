@@ -38,11 +38,6 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     public event EventHandler? UiTaskStopTickEvent;
     public event EventHandler? UiTaskStartTickEvent;
 
-    /// <summary>
-    /// 日常任务序列执行完成或无法继续时触发,供 VM 关闭 UI 开关。
-    /// </summary>
-    public event EventHandler? DailyTaskFinishedEvent;
-
     public ZzzTaskTriggerDispatcher()
     {
         _timer.Elapsed += Tick;
@@ -55,7 +50,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         ProbeIntegrityLevel();
     }
 
-    public void Start(nint hWnd, CaptureModes mode, bool runDailyTask = false, bool runEmptyTrigger = true, bool runTestTrigger = false)
+    public void Start(nint hWnd, CaptureModes mode, bool runTestTrigger = false, bool runCommonTrigger = false, bool runNewTrigger = false)
     {
         Stop(); // 兜底
 
@@ -63,7 +58,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         _frameIndex = 0;
         // 不再调 ActivateWindow:PostMessage 测试已验证 ZZZ 后台消息通路可用
         // (BetterGI High→ZZZ Medium 不被 UIPI 拦,配合同步阻塞 + ZZZ 自身 GetMessage 即可消费)。
-        // 启动时切前台会抢 BetterGI 焦点,触发器命中后不再切前台(对齐 EmptyZzzTaskTrigger 设计)。
+        // 启动时切前台会抢 BetterGI 焦点,触发器命中后不再切前台(对齐"运行时不再抢前台"的设计)。
 
         _capture = GameCaptureFactory.Create(mode);
         // BitBltCapture.Start 收到 settings=null 会直接 return，必须显式传。
@@ -84,21 +79,18 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         ShowOverlay(hWnd);
 
         var triggers = new List<IZzzTaskTrigger>();
-        if (runDailyTask)
-        {
-            triggers.Add(CreateDailyTrigger());
-        }
-
-        if (runEmptyTrigger)
-        {
-            triggers.Add(new EmptyZzzTaskTrigger(
-                onMatch: (rect, content, label) => DrawOverlayRect(rect, content, label),
-                onClick: (point, content) => DrawClickDot(point, content)));
-        }
 
         if (runTestTrigger)
         {
             triggers.Add(CreateTestTrigger());
+        }
+        if (runCommonTrigger)
+        {
+            triggers.Add(CreateCommonTrigger());
+        }
+        if (runNewTrigger)
+        {
+            triggers.Add(CreateNewTrigger());
         }
 
         _triggers = triggers;
@@ -139,20 +131,22 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         UiTaskStopTickEvent?.Invoke(this, EventArgs.Empty);
     }
 
-    private DailyTaskZzzTrigger CreateDailyTrigger()
-    {
-        return new DailyTaskZzzTrigger(
-            onMatch: (rect, content, label) => DrawOverlayRect(rect, content, label),
-            onClick: (point, content) => DrawClickDot(point, content),
-            onFinished: () => DailyTaskFinishedEvent?.Invoke(this, EventArgs.Empty));
-    }
-
     private TestZzzTaskTrigger CreateTestTrigger()
     {
         return new TestZzzTaskTrigger(
             captureProvider: BuildCaptureProvider(),
             overlay: _overlay,
             postMessageSimulator: TaskContext.Instance().PostMessageSimulator);
+    }
+
+    private CommonZzzTaskTrigger CreateCommonTrigger()
+    {
+        return new CommonZzzTaskTrigger(overlay: _overlay);
+    }
+
+    private NewZzzTaskTrigger CreateNewTrigger()
+    {
+        return new NewZzzTaskTrigger(overlay: _overlay);
     }
 
     /// <summary>
@@ -185,49 +179,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     }
 
     /// <summary>
-    /// 热挂载/卸载日常任务 trigger。仅在运行中生效(未运行时下次 Start 按 config 挂载)。
-    /// 用户重新打开开关 → 重建全新实例从 seq 0 再跑;关闭 → 移除并释放。
-    /// 在 _locker 内改动 _triggers,与 Tick 遍历互斥。
-    /// </summary>
-    public void SetDailyTaskEnabled(bool enabled)
-    {
-        lock (_locker)
-        {
-            if (_capture == null)
-            {
-                return;
-            }
-
-            var hasDaily = _triggers.Exists(t => t is DailyTaskZzzTrigger);
-            if (enabled == hasDaily)
-            {
-                return;
-            }
-
-            var newList = new List<IZzzTaskTrigger>(_triggers);
-            if (enabled)
-            {
-                newList.Add(CreateDailyTrigger());
-                Debug.WriteLine("[ZZZ] daily trigger 已挂载(重新打开)");
-            }
-            else
-            {
-                var daily = newList.Find(t => t is DailyTaskZzzTrigger);
-                if (daily != null)
-                {
-                    newList.Remove(daily);
-                    (daily as IDisposable)?.Dispose();
-                }
-
-                Debug.WriteLine("[ZZZ] daily trigger 已卸载");
-            }
-
-            _triggers = newList;
-        }
-    }
-
-    /// <summary>
-    /// 热挂载/卸载测试 trigger。模式与 SetDailyTaskEnabled 一致,见该方法注释。
+    /// 热挂载/卸载测试 trigger。
     /// </summary>
     public void SetTestTriggerEnabled(bool enabled)
     {
@@ -262,6 +214,85 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
                 Debug.WriteLine("[ZZZ] test trigger 已卸载");
             }
 
+            _triggers = newList;
+        }
+    }
+
+    /// <summary>
+    /// 热挂载/卸载通用 trigger:对所有主模板一次性检测并执行命中后的动作(无序列逻辑)。
+    /// </summary>
+    public void SetCommonTriggerEnabled(bool enabled)
+    {
+        lock (_locker)
+        {
+            if (_capture == null)
+            {
+                return;
+            }
+
+            var hasCommon = _triggers.Exists(t => t is CommonZzzTaskTrigger);
+            if (enabled == hasCommon)
+            {
+                return;
+            }
+
+            var newList = new List<IZzzTaskTrigger>(_triggers);
+            if (enabled)
+            {
+                newList.Add(CreateCommonTrigger());
+                Debug.WriteLine("[ZZZ] common trigger 已挂载(重新打开)");
+            }
+            else
+            {
+                var common = newList.Find(t => t is CommonZzzTaskTrigger);
+                if (common != null)
+                {
+                    newList.Remove(common);
+                    (common as IDisposable)?.Dispose();
+                }
+
+                Debug.WriteLine("[ZZZ] common trigger 已卸载");
+            }
+
+            _triggers = newList;
+        }
+    }
+
+    /// <summary>
+    /// 热挂载/卸载新架构 trigger:用 IWorkflowNode 链验证用,Phase 1 临时开关。
+    /// </summary>
+    public void SetNewTriggerEnabled(bool enabled)
+    {
+        lock (_locker)
+        {
+            if (_capture == null)
+            {
+                return;
+            }
+
+            var hasNew = _triggers.Exists(t => t is NewZzzTaskTrigger);
+            if (enabled == hasNew)
+            {
+                return;
+            }
+
+            var newList = new List<IZzzTaskTrigger>(_triggers);
+            if (enabled)
+            {
+                newList.Add(CreateNewTrigger());
+                Debug.WriteLine("[ZZZ] new trigger 已挂载(重新打开)");
+            }
+            else
+            {
+                var newTrig = newList.Find(t => t is NewZzzTaskTrigger);
+                if (newTrig != null)
+                {
+                    newList.Remove(newTrig);
+                    (newTrig as IDisposable)?.Dispose();
+                }
+
+                Debug.WriteLine("[ZZZ] new trigger 已卸载");
+            }
             _triggers = newList;
         }
     }

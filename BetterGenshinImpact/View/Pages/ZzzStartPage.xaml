@@ -98,58 +98,6 @@
                     <ui:TextBlock Grid.Row="0"
                                   Grid.Column="0"
                                   FontTypography="Body"
-                                  Text="启用通用模板 trigger"
-                                  TextWrapping="Wrap" />
-                    <ui:TextBlock Grid.Row="1"
-                                  Grid.Column="0"
-                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                  Text="按 Assets\Template 目录里 &lt;名字&gt;_&lt;x&gt;_&lt;y&gt;_&lt;w&gt;x&lt;h&gt;.png 自动点击"
-                                  TextWrapping="Wrap" />
-                    <ui:ToggleSwitch Grid.Row="0"
-                                     Grid.RowSpan="2"
-                                     Grid.Column="1"
-                                     Margin="0,0,36,0"
-                                     IsChecked="{Binding Config.ZzzEmptyTriggerEnabled, Mode=TwoWay}" />
-                </Grid>
-                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
-                <Grid Margin="16">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:TextBlock Grid.Row="0"
-                                  Grid.Column="0"
-                                  FontTypography="Body"
-                                  Text="同时执行日常任务 trigger"
-                                  TextWrapping="Wrap" />
-                    <ui:TextBlock Grid.Row="1"
-                                  Grid.Column="0"
-                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                  Text="开启后会在截图器中挂载日常 tab 切换 + 前往按钮自动点击"
-                                  TextWrapping="Wrap" />
-                    <ui:ToggleSwitch Grid.Row="0"
-                                     Grid.RowSpan="2"
-                                     Grid.Column="1"
-                                     Margin="0,0,36,0"
-                                     IsChecked="{Binding Config.ZzzDailyTaskEnabled, Mode=TwoWay}" />
-                </Grid>
-                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
-                <Grid Margin="16">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:TextBlock Grid.Row="0"
-                                  Grid.Column="0"
-                                  FontTypography="Body"
                                   Text="挂载测试 trigger（开发/调试用，当前为空实现）"
                                   TextWrapping="Wrap" />
                     <ui:TextBlock Grid.Row="1"
@@ -162,6 +110,58 @@
                                      Grid.Column="1"
                                      Margin="0,0,36,0"
                                      IsChecked="{Binding Config.ZzzTestTriggerEnabled, Mode=TwoWay}" />
+                </Grid>
+                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="挂载通用 trigger(一次性检测所有主模板并执行命中后的动作)"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="无序列逻辑:每帧扫描全部模板,首命中后本帧结束,下一帧重新全扫描"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.ZzzCommonTriggerEnabled, Mode=TwoWay}" />
+                </Grid>
+                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="挂载新架构 trigger(IWorkflowNode 节点链验证)"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="2 节点链:F2 模板命中→按 F2→ContinueArrow HSV 命中→按 Space→结束。验证阶段用。"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.ZzzNewTriggerEnabled, Mode=TwoWay}" />
                 </Grid>
                 <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
                 <Grid Margin="16">
@@ -217,6 +217,35 @@
                                Command="{Binding CaptureCurrentImageCommand}"
                                Content="获取当前图像" />
                 </Grid>
+            </StackPanel>
+        </ui:CardExpander>
+        <ui:CardExpander Margin="0,12,0,12"
+                         ContentPadding="0"
+                         Icon="{ui:SymbolIcon TaskListLtr24}">
+            <ui:CardExpander.Header>
+                <Grid VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Column="0"
+                                  VerticalAlignment="Center"
+                                  FontTypography="Body"
+                                  Text="执行日常任务"
+                                  TextWrapping="Wrap" />
+                    <ui:Button Grid.Column="1"
+                               Margin="0,0,24,0"
+                               VerticalAlignment="Center"
+                               Command="{Binding ExecuteDailyTaskCommand}"
+                               Content="开始" />
+                </Grid>
+            </ui:CardExpander.Header>
+            <StackPanel>
+                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+                <ui:TextBlock Margin="16"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="点击开始自动跑 ZZZ 日常任务序列(暂未实现)"
+                              TextWrapping="Wrap" />
             </StackPanel>
         </ui:CardExpander>
     </StackPanel>

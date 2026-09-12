@@ -49,22 +49,28 @@ public partial class AllConfig : ObservableObject
     private string _zzzCaptureMode = CaptureModes.BitBlt.ToString();
 
     /// <summary>
-    ///     启动绝区零截图器时同时挂载日常任务 trigger
-    /// </summary>
-    [ObservableProperty]
-    private bool _zzzDailyTaskEnabled;
-
-    /// <summary>
-    ///     启动绝区零截图器时挂载通用模板 trigger（按 Assets\Template 目录里 <名字>_<x>_<y>_<w>x<h>.png 自动点击）
-    /// </summary>
-    [ObservableProperty]
-    private bool _zzzEmptyTriggerEnabled = true;
-
-    /// <summary>
     ///     启动绝区零截图器时挂载测试 trigger（开发/调试占位，当前为空实现）
     /// </summary>
     [ObservableProperty]
     private bool _zzzTestTriggerEnabled;
+
+    /// <summary>
+    /// 启动绝区零截图器时挂载通用 trigger:对所有主模板一次性检测并执行命中后的动作(无序列逻辑)。
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzCommonTriggerEnabled;
+
+    /// <summary>
+    /// 启动绝区零截图器时挂载新架构 trigger:IWorkflowNode 节点链验证用,Phase 1 临时开关。
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzNewTriggerEnabled;
+
+    /// <summary>
+    /// 绝区零启动路径（ZenlessZoneZero.exe）。留空时启动时会自动从注册表发现。
+    /// </summary>
+    [ObservableProperty]
+    private string _zzzInstallPath = string.Empty;
 
     /// <summary>
     ///     详细的错误日志

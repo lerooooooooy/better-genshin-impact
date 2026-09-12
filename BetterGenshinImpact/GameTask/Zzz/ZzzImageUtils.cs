@@ -13,7 +13,6 @@ public static class ZzzImageUtils
 {
     /// <summary>
     /// 把可能越界的 Roi 钳制到当前帧 [0, W) × [0, H);完全越界退回整个图。
-    /// 合并自 DailyTaskZzzTrigger / EmptyZzzTaskTrigger 两份私有重复实现。
     /// </summary>
     public static CvRect ClampRoi(CvRect roi, int width, int height)
     {

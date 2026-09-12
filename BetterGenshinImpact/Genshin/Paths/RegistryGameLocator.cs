@@ -52,4 +52,46 @@ public class RegistryGameLocator
 
         return null;
     }
+
+    public static string? GetDefaultZzzInstallPath()
+    {
+        try
+        {
+            var cn = Registry.GetValue($@"HKEY_CURRENT_USER\Software\miHoYo\HYP\1_1\nap_cn", "GameInstallPath", null) as string;
+            if (!string.IsNullOrEmpty(cn))
+            {
+                var filePath = Path.Combine(cn, "ZenlessZoneZero.exe");
+                if (File.Exists(filePath))
+                {
+                    return filePath;
+                }
+            }
+
+            var global = Registry.GetValue($@"HKEY_CURRENT_USER\Software\Cognosphere\HYP\1_0\nap_global", "GameInstallPath", null) as string;
+            if (!string.IsNullOrEmpty(global))
+            {
+                var filePath = Path.Combine(global, "ZenlessZoneZero.exe");
+                if (File.Exists(filePath))
+                {
+                    return filePath;
+                }
+            }
+
+            var bilibili = Registry.GetValue($@"HKEY_CURRENT_USER\Software\miHoYo\HYP\standalone\15_0\nap_cn\umfgRO5gh5\nap_cn", "GameInstallPath", null) as string;
+            if (!string.IsNullOrEmpty(bilibili))
+            {
+                var filePath = Path.Combine(bilibili, "ZenlessZoneZero.exe");
+                if (File.Exists(filePath))
+                {
+                    return filePath;
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            TaskControl.Logger.LogDebug(e, "Failed to locate ZZZ path from HYP.");
+        }
+
+        return null;
+    }
 }

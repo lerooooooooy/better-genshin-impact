@@ -2,11 +2,14 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Interop;
 using System.Windows.Media;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.GameTask.Zzz;
+using BetterGenshinImpact.Genshin.Paths;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Helpers.Extensions;
 using BetterGenshinImpact.Helpers.Ui;
@@ -19,6 +22,7 @@ using CommunityToolkit.Mvvm.Input;
 using Fischless.GameCapture;
 using Vanara.PInvoke;
 using Wpf.Ui.Violeta.Controls;
+using CvRect = OpenCvSharp.Rect;
 
 namespace BetterGenshinImpact.ViewModel.Pages;
 
@@ -36,17 +40,20 @@ public partial class ZzzStartPageViewModel : ViewModel
 
     private readonly ZzzTaskTriggerDispatcher _dispatcher = new();
 
+    private readonly ZzzDailyTaskRunner _dailyTaskRunner;
+
     public ZzzStartPageViewModel(IConfigService configService)
     {
         Config = configService.Get();
         _dispatcher.UiTaskStopTickEvent += OnUiTaskStopTick;
-        _dispatcher.DailyTaskFinishedEvent += OnDailyTaskFinished;
         Config.PropertyChanged += OnConfigPropertyChanged;
         // 启动时从 Config.ZzzCaptureMode 回填。
         if (!string.IsNullOrEmpty(Config.ZzzCaptureMode))
         {
             _selectedMode = Config.ZzzCaptureMode;
         }
+        ReadZzzInstallPath();
+        _dailyTaskRunner = new ZzzDailyTaskRunner(Config);
     }
 
     private void OnUiTaskStopTick(object? sender, EventArgs e)
@@ -55,32 +62,19 @@ public partial class ZzzStartPageViewModel : ViewModel
         StatusText = "已停止";
     }
 
-    /// <summary>
-    /// 日常序列跑完/无法继续:trigger 已自行停用,这里把 UI 开关也关掉。
-    /// 关开关会触发 OnConfigPropertyChanged → SetDailyTaskEnabled(false) 卸载实例。
-    /// </summary>
-    private void OnDailyTaskFinished(object? sender, EventArgs e)
-    {
-        // 必须 BeginInvoke(异步):Finish 在 timer 线程持 _locker 时触发本回调,
-        // 关开关会同步走 SetDailyTaskEnabled → lock(_locker),同步 Invoke 会与 timer 线程互相等待死锁。
-        UIDispatcherHelper.BeginInvoke(() =>
-        {
-            if (Config.ZzzDailyTaskEnabled)
-            {
-                Config.ZzzDailyTaskEnabled = false;
-            }
-        });
-    }
-
     private void OnConfigPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AllConfig.ZzzDailyTaskEnabled))
-        {
-            _dispatcher.SetDailyTaskEnabled(Config.ZzzDailyTaskEnabled);
-        }
-        else if (e.PropertyName == nameof(AllConfig.ZzzTestTriggerEnabled))
+        if (e.PropertyName == nameof(AllConfig.ZzzTestTriggerEnabled))
         {
             _dispatcher.SetTestTriggerEnabled(Config.ZzzTestTriggerEnabled);
+        }
+        else if (e.PropertyName == nameof(AllConfig.ZzzCommonTriggerEnabled))
+        {
+            _dispatcher.SetCommonTriggerEnabled(Config.ZzzCommonTriggerEnabled);
+        }
+        else if (e.PropertyName == nameof(AllConfig.ZzzNewTriggerEnabled))
+        {
+            _dispatcher.SetNewTriggerEnabled(Config.ZzzNewTriggerEnabled);
         }
     }
 
@@ -142,6 +136,29 @@ public partial class ZzzStartPageViewModel : ViewModel
             {
                 Toast.Error("选择的窗体句柄为空！");
             }
+        }
+    }
+
+    [RelayCommand]
+    private Task OnExecuteDailyTaskAsync()
+    {
+        // 主流程(检查进程 → 找路径 → 启动 → 等「点击进入游戏」OCR + 点击)抽到 ZzzDailyTaskRunner。
+        // 这里只透传当前 dropdown 值,dropdown 改变时已通过 OnSelectedModeChanged 写回 Config.ZzzCaptureMode。
+        return _dailyTaskRunner.RunAsync(SelectedMode);
+    }
+
+    private void ReadZzzInstallPath()
+    {
+        if (string.IsNullOrEmpty(Config.ZzzInstallPath))
+        {
+            Task.Run(() =>
+            {
+                var p = RegistryGameLocator.GetDefaultZzzInstallPath();
+                if (!string.IsNullOrEmpty(p))
+                {
+                    Config.ZzzInstallPath = p;
+                }
+            });
         }
     }
 
@@ -290,7 +307,7 @@ public partial class ZzzStartPageViewModel : ViewModel
 
     private void Start(IntPtr hWnd)
     {
-        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzDailyTaskEnabled, Config.ZzzEmptyTriggerEnabled, Config.ZzzTestTriggerEnabled);
+        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzTestTriggerEnabled, Config.ZzzCommonTriggerEnabled, Config.ZzzNewTriggerEnabled);
         IsRunning = true;
         StatusText = "运行中111";
     }

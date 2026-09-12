@@ -90,6 +90,38 @@ public class SystemControl
         return FindGenshinImpactHandle();
     }
 
+    public static async Task<nint> StartZzzFromLocalAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            await ThemedMessageBox.ErrorAsync($"绝区零启动路径 {path} 不存在，请前往启动设置手动填写。");
+            return IntPtr.Zero;
+        }
+
+        var workdir = Path.GetDirectoryName(path) ?? "";
+        Process.Start(new ProcessStartInfo(path)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = workdir
+        });
+
+        for (var i = 0; i < 5; i++)
+        {
+            var handle = FindZzzHandle();
+            if (handle != 0)
+            {
+                await Task.Delay(2333);
+                handle = FindZzzHandle();
+                await Task.Delay(2577);
+                return handle;
+            }
+
+            await Task.Delay(5577);
+        }
+
+        return FindZzzHandle();
+    }
+
     internal static string BuildGenshinStartArguments(string? configuredArguments, bool isChildSession)
     {
         var arguments = configuredArguments?.Trim() ?? string.Empty;
