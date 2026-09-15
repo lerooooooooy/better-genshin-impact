@@ -10,7 +10,8 @@ namespace BetterGenshinImpact.GameTask.Zzz;
 /// retry counter 是实例字段,放接口里会让每个具体类重复写。
 ///
 /// retry 语义(跨调用累计,实例持久):
-/// - miss → RetryCount++,RetryCount &lt; MaxRetries 时返回 this,达到 MaxRetries 返回 null(工作流结束)
+/// - miss → RetryCount++,RetryCount &lt; MaxRetries 时返回 this,达到 MaxRetries 返回
+///   <see cref="FailTemplate"/>(默认 null = 终止工作流)
 /// - hit → RetryCount = 0,Operation 执行完后返回 SuccessTemplate(null = 工作流结束)
 /// - Operation 抛异常 → 自然上浮给 caller,counter 不变
 /// </summary>
@@ -20,6 +21,7 @@ public abstract class WorkflowNodeBase : IWorkflowNode
     public abstract int MaxRetries { get; }
     public int RetryCount { get; private set; }
     public abstract IWorkflowNode? SuccessTemplate { get; internal set; }
+    public abstract IWorkflowNode? FailTemplate { get; internal set; }
 
     public abstract bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? result);
     public abstract Action<ZzzCaptureContent, TemplateMatchResult?> Operation { get; internal set; }
@@ -43,7 +45,7 @@ public abstract class WorkflowNodeBase : IWorkflowNode
         if (!hit)
         {
             RetryCount++;
-            return RetryCount >= MaxRetries ? null : this;
+            return RetryCount >= MaxRetries ? FailTemplate : this;
         }
         RetryCount = 0;
         // 命中时统一画框(overlay 非 null 且 result 非 null 才画;label 用节点自己的 Label)

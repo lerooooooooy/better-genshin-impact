@@ -118,6 +118,10 @@ public sealed class HsvWaitTarget : IZzzWaitTarget
 /// OCR 文本 target:在固定 ROI 内跑 PaddleOCR,任一 region 文本含 <see cref="_targetText"/> 子串即命中。
 /// 不做 score 阈值过滤(由 PaddleOCR 自身置信度决定),与 AutoSkipTrigger 现有 FindRectByText 用法一致。
 /// 命中时 <c>templateResult</c> 始终为 null(caller 走 ROI 画框路径,与 HsvWaitTarget 相同)。
+///
+/// 命中后会把"被识别出的文字所在 region 的 boundingRect"(capture 坐标系)写入
+/// <see cref="LastMatchBbox"/>,给 <see cref="OcrWorkflowNode"/> 的 Operation 用,
+/// 实现"点识别文字 bbox 内随机位置"而非 ROI 内随机位置。
 /// </summary>
 public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
 {
@@ -126,6 +130,13 @@ public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
 
     private readonly CvRect _roi;
     private readonly string _targetText;
+
+    /// <summary>
+    /// 最近一次 TryMatch 命中时,PaddleOCR 返回的文字 region 的 axis-aligned boundingRect,
+    /// 换算到 capture 坐标系(非 ROI 子图坐标);命中时设置,miss 时清空。
+    /// 命中但 bbox 解析失败时为 null(罕见,如 region.Rect 异常),caller 应回退到 ROI。
+    /// </summary>
+    public CvRect? LastMatchBbox { get; private set; }
 
     public OcrWaitTarget(string label, CvRect roi, string targetText)
     {
@@ -137,12 +148,27 @@ public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
     public bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult)
     {
         templateResult = null;
+        LastMatchBbox = null;
         try
         {
             var safeRoi = ZzzImageUtils.ClampRoi(_roi, content.Image.Width, content.Image.Height);
             using var sub = new Mat(content.Image, safeRoi);
             var ocr = OcrFactory.Paddle.OcrResult(sub);
-            return ocr.RegionHasText(_targetText);
+            var region = ocr.FindRegionByText(_targetText);
+            // region.Text 是 default(OcrResultRegion).Text = "" 时表示没找到
+            if (string.IsNullOrEmpty(region.Text))
+            {
+                return false;
+            }
+            // region.Rect 是 quadrilateral(points);BoundingRect() 算 axis-aligned bbox。
+            // 坐标换算:子图 (0,0) 对应 capture 的 safeRoi 起点,加偏移到 capture 坐标。
+            var bb = region.Rect.BoundingRect();
+            LastMatchBbox = new CvRect(
+                safeRoi.X + bb.X,
+                safeRoi.Y + bb.Y,
+                bb.Width,
+                bb.Height);
+            return true;
         }
         catch (Exception ex)
         {

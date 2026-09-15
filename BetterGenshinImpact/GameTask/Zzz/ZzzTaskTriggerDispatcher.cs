@@ -146,7 +146,9 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
 
     private NewZzzTaskTrigger CreateNewTrigger()
     {
-        return new NewZzzTaskTrigger(overlay: _overlay);
+        // 传 method group Stop:触发器在 daliyFin 命中 / 扫描超限时调用,真正停掉截图器 + timer
+        // (不只是 IsEnabled=false)。
+        return new NewZzzTaskTrigger(overlay: _overlay, requestDispatcherStop: Stop);
     }
 
     /// <summary>

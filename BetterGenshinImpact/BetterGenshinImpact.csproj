@@ -222,6 +222,9 @@
 		<None Update="GameTask\Zzz\Template\Common\daliyF2_1538_116_36x24_200.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<None Update="GameTask\Zzz\Template\Common\daliyFin_1541_264_59x79.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 		<None Update="GameTask\Zzz\Template\Common\daliyGo_871_843_181x47.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
@@ -229,6 +232,36 @@
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Update="GameTask\Zzz\Template\Common\betterySkip_1641_111_202x41.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\rwd1_1161_510_74x58_400.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\rwd2_1013_632_201x119.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\rwd4_927_406_63x33.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\rwd5_934_855_56x26.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\rwd6_1257_955_121x34.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\shop2_845_575_115x22.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\shop3_68_1012_118x29.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\shop4_1056_630_90x228.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\shop5_1282_1010_187x34.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="GameTask\Zzz\Template\Common\shop6_1546_955_244x34.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Update="GameTask\AutoDomain\Assets\1920x1080\**">

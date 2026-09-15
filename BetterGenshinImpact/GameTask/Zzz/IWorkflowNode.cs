@@ -25,6 +25,13 @@ public interface IWorkflowNode : IDisposable
     IWorkflowNode? SuccessTemplate { get; }
 
     /// <summary>
+    /// 重试耗尽后切换到的失败路径节点(替代原本直接返回 null 终止);
+    /// null = 失败时直接终止工作流(老行为)。设置后,retry 耗尽返回此节点,允许
+    /// "主路径失败 → 走备选 OCR / 不同检测"这类分支恢复逻辑。
+    /// </summary>
+    IWorkflowNode? FailTemplate { get; }
+
+    /// <summary>
     /// 在给定 capture 帧上尝试匹配。
     /// 命中返回 true,模板命中时 <paramref name="result"/> 非 null。
     /// 内部实现应捕获异常并视为 miss(避免单次抛错打挂整个工作流)。
