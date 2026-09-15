@@ -36,6 +36,7 @@ public static class ZzzTriggerActions
     /// </summary>
     public static void PressKeyForeground(User32.VK keyCode, ZzzCaptureContent hitContent)
     {
+        Thread.Sleep(1500);
         if (User32.GetForegroundWindow() != hitContent.Hwnd)
         {
             SystemControl.ActivateWindow(hitContent.Hwnd);
@@ -56,6 +57,7 @@ public static class ZzzTriggerActions
         {
             SystemControl.ActivateWindow(hitContent.Hwnd);
         }
+        Thread.Sleep(1500);
         Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
         var abs = r.AbsRect;
         var randX = abs.X + _rng.Next(0, Math.Max(1, abs.Width));
@@ -74,6 +76,7 @@ public static class ZzzTriggerActions
         {
             SystemControl.ActivateWindow(hitContent.Hwnd);
         }
+        Thread.Sleep(1500);
         Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
         var randX = rect.X + _rng.Next(0, Math.Max(1, rect.Width));
         var randY = rect.Y + _rng.Next(0, Math.Max(1, rect.Height));

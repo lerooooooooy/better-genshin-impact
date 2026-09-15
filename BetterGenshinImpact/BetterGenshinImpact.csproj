@@ -225,10 +225,10 @@
 		<None Update="GameTask\Zzz\Template\Common\daliyGo_871_843_181x47.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Update="GameTask\Zzz\Template\Common\daliyNoSel_926_158_129x43.png">
+		<None Update="GameTask\Zzz\Template\Common\getBattery_907_464_105x105.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
-		<None Update="GameTask\Zzz\Template\Common\daliySel_916_145_143x60.png">
+		<None Update="GameTask\Zzz\Template\Common\betterySkip_1641_111_202x41.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 		<None Update="GameTask\AutoDomain\Assets\1920x1080\**">
