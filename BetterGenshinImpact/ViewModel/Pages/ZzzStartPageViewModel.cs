@@ -102,13 +102,30 @@ public partial class ZzzStartPageViewModel : ViewModel
     }
 
     [RelayCommand]
-    private void OnStart()
+    private async Task OnStart()
     {
         var hWnd = SystemControl.FindZzzHandle();
         if (hWnd == IntPtr.Zero)
         {
-            Toast.Warning("未找到绝区零窗口");
-            return;
+            // 未启动 → 复用 ZzzDailyTaskRunner 同款启动链:读 Config.ZzzInstallPath,缺失再退到注册表。
+            // 构造时 ReadZzzInstallPath 已把注册表读到的路径写回 Config,这里直接取用即可。
+            if (string.IsNullOrEmpty(Config.ZzzInstallPath))
+            {
+                var path = RegistryGameLocator.GetDefaultZzzInstallPath();
+                if (string.IsNullOrEmpty(path))
+                {
+                    Toast.Warning("未找到绝区零窗口,且未配置安装路径");
+                    return;
+                }
+                Config.ZzzInstallPath = path;
+            }
+
+            hWnd = await SystemControl.StartZzzFromLocalAsync(Config.ZzzInstallPath);
+            if (hWnd == IntPtr.Zero)
+            {
+                Toast.Warning("绝区零启动失败,请检查安装路径");
+                return;
+            }
         }
 
         Start(hWnd);

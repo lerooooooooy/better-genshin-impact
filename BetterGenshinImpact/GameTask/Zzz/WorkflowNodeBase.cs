@@ -18,7 +18,7 @@ namespace BetterGenshinImpact.GameTask.Zzz;
 public abstract class WorkflowNodeBase : IWorkflowNode
 {
     public abstract string Label { get; }
-    public abstract int MaxRetries { get; }
+    public abstract int MaxRetries { get; internal set; }
     public int RetryCount { get; private set; }
     public abstract IWorkflowNode? SuccessTemplate { get; internal set; }
     public abstract IWorkflowNode? FailTemplate { get; internal set; }

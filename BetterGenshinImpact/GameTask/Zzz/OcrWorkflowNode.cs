@@ -46,7 +46,7 @@ public sealed class OcrWorkflowNode : WorkflowNodeBase
     }
 
     public override string Label { get; }
-    public override int MaxRetries { get; }
+    public override int MaxRetries { get; internal set; }
     public override IWorkflowNode? SuccessTemplate { get; internal set; }
     public override IWorkflowNode? FailTemplate { get; internal set; }
     public override Action<ZzzCaptureContent, TemplateMatchResult?> Operation { get; internal set; }

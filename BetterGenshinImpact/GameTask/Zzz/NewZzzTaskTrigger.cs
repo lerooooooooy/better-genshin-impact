@@ -21,7 +21,7 @@ namespace BetterGenshinImpact.GameTask.Zzz;
 /// OcrTingmanSpecial → betterySkip → getBattery → null(链尾)。daliyFin 和 OcrActivityFull
 /// 都是"日常已完成"早退检查(各自 SuccessTemplate = null,FailTemplate 接后继节点)。
 /// FailTemplate 分支(2 条):
-///   - OcrTingmanMaster 重试耗尽 → OcrHouHou → OcrAjiu → rwd1 → rwd2 → rwd4 → rwd5 → rwd6 →
+///   - OcrTingmanMaster 重试耗尽 → OcrHouHou → OcrAjiu → OcrRwd1 → rwd2 → rwd4 → rwd5 → rwd6 →
 ///     daliyF2(闭环回主入口,跳过汀曼对话 + 奖励弹窗序列)。
 ///   - OcrTingmanSpecial 重试耗尽 → OcrShopStatus → OcrYesterdayBill → shop2 → shop3 → shop4 →
 ///     shop5 → shop6 → OcrReadyToOpen → OcrHonestBusiness → OcrShengyiXinglong → null(点查看经营
@@ -81,13 +81,24 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private int _scanTriggerCount;
 
     private const double MatchThreshold = 0.96;
-    private const int MaxRetries = 10;
+    private const int MaxRetries = 30;
 
     // 扫描触发上限(总次数,不重置):3 次后 stop dispatcher,不再扫描。
-    private const int MaxScanTriggers = 3;
+    private const int MaxScanTriggers = 30;
 
     // 模板列表目录:扫描 GameTask/Zzz/Template/Common 下所有 PNG(由 TemplateImage.EnumerateTemplateFiles 列出)
     private const string CommonTemplateDir = "GameTask\\Zzz\\Template\\Common";
+
+    // "月卡剩余" OCR 区域 + 文本(挂在 OcrEnterGame 之后,作为"日常已完成"早退检查):
+    // OCR 命中 → 点击 OCR 识别区;SuccessTemplate 由 ConfigureCommonNodes 接 daliyF2(主路径入口)。
+    private static readonly CvRect MonthlyCardRoi = new(715, 587, 248, 44);
+    private const string MonthlyCardText = "月卡剩余";
+
+    // "点击进入游戏" OCR 区域 + 文本(链真正首入口,挂在 _nodesByLabel 字典第一位):
+    // OCR 命中 → 点击 OCR 命中文字 bbox 内随机位置;SuccessTemplate 接 OcrMonthlyCardRemaining。
+    // ROI 复用 ZzzDailyTaskRunner.WaitForEnterGameAsync 已有的 (890,869,140x39)。
+    private static readonly CvRect EnterGameRoi = new(890, 869, 140, 39);
+    private const string EnterGameText = "点击进入游戏";
 
     // "汀曼大师" OCR 区域 + 文本(挂在 daliyGo 之后,ContinueArrow 之前)
     private static readonly CvRect TingmanMasterRoi = new(461, 14, 986, 745);
@@ -111,9 +122,17 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private const string HouHouText = "吼吼先生";
 
     // "阿玖" OCR 区域 + 文本(挂在 OcrHouHou 的 FailTemplate):吼吼先生 OCR 失败时
-    // 再退化路径,识别成功后同样按 F;SuccessTemplate 接 rwd1(对齐 OcrHouHou pattern)。
+    // 再退化路径,识别成功后同样按 F;SuccessTemplate 接 OcrRwd1(对齐 OcrHouHou pattern)。
     private static readonly CvRect AjiuRoi = new(786, 242, 203, 196);
     private const string AjiuText = "阿玖";
+
+    // "每日可领一次" OCR 区域 + 点击固定 UI 区域(挂在 OcrAjiu / OcrHouHou 之后):
+    // 替代原 rwd1 模板匹配(模板匹配不稳定),改用 OCR 识别"每日可领一次"文字,
+    // 命中后点击原 rwd1 模板位置 (1161,510,74,58) — 文字 ROI 和按钮位置分离
+    // (文字在屏幕底部,按钮在中间)。SuccessTemplate 由 ConfigureCommonNodes 接 rwd2。
+    private static readonly CvRect Rwd1Roi = new(1170, 914, 389, 113);
+    private static readonly CvRect Rwd1ClickRect = new(1161, 510, 74, 58);
+    private const string Rwd1Text = "每日可领取一次";
 
     // "查看经营状况" OCR 区域 + 文本(挂在 OcrTingmanSpecial 的 FailTemplate):
     // 主路径 OcrTingmanSpecial 重试耗尽时的退化路径(类似"汀曼特调"按钮未识别但 ROI
@@ -150,6 +169,11 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private static readonly CvRect ShengyiXinglongRoi = new(770, 451, 350, 132);
     private const string ShengyiXinglongText = "生意兴隆";
 
+    // "开店大吉" OCR 区域 + 文本(挂在 FailTemplate 分支 OcrShengyiXinglong 之后):
+    // 命中后按 ESC 关闭弹窗(对齐 OcrShengyiXinglong 的"按 ESC"模式)。
+    private static readonly CvRect KaidianDajiRoi = new(789, 488, 308, 73);
+    private const string KaidianDajiText = "开店大吉";
+
     // 领取电池弹窗的"已领取/确认"按钮区域:固定位置,跟 getBattery 模板(907,464 弹窗图)无关。
     // 对齐 TestZzzTaskTrigger.RunSeqGetBattery:模板命中后点击此固定按钮区,
     // 不能用 ClickMatchedArea(会点到弹窗图中央而不是按钮)。
@@ -165,6 +189,35 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
         // 节点 map(单一真源):label → node。
         _nodesByLabel = new Dictionary<string, WorkflowNodeBase>();
+
+        // "点击进入游戏" OCR 节点:链真正首入口,字典第一位(全扫描优先进它)。
+        // OCR 命中 → 点击 OCR 命中文字 bbox 内随机位置(复用 BuildOcrClickOperation,
+        // 对齐 OcrTingmanSpecial / OcrShopStatus pattern);
+        // SuccessTemplate 由 ConfigureCommonNodes switch 接 OcrMonthlyCardRemaining。
+        var enterGameNode = new OcrWorkflowNode(
+            label: "OcrEnterGame",
+            maxRetries: MaxRetries,
+            successTemplate: null,  // 由 ConfigureCommonNodes switch 接 OcrMonthlyCardRemaining
+            roi: EnterGameRoi,
+            targetText: EnterGameText,
+            operation: NoOpPlaceholder,  // 占位,赋值见下一行
+            overlay: _overlay);
+        enterGameNode.Operation = BuildOcrClickOperation(enterGameNode, "OcrEnterGame");
+        _nodesByLabel[enterGameNode.Label] = enterGameNode;
+
+        // "月卡剩余" OCR 节点:挂在 OcrEnterGame 之后,作为"日常已完成"早退检查。
+        // OCR 命中 → 点击 OCR 识别文字所在 region(对齐 OcrTingmanSpecial / OcrShopStatus pattern);
+        // SuccessTemplate 由 ConfigureCommonNodes 接 daliyF2(命中后进入主路径)。
+        var monthlyCardNode = new OcrWorkflowNode(
+            label: "OcrMonthlyCardRemaining",
+            maxRetries: MaxRetries,
+            successTemplate: null,  // 由 ConfigureCommonNodes switch 接 daliyF2
+            roi: MonthlyCardRoi,
+            targetText: MonthlyCardText,
+            operation: NoOpPlaceholder,  // 占位,赋值见下一行
+            overlay: _overlay);
+        monthlyCardNode.Operation = BuildOcrClickOperation(monthlyCardNode, "OcrMonthlyCardRemaining");
+        _nodesByLabel[monthlyCardNode.Label] = monthlyCardNode;
 
         // 1) Build:扫目录,把每个 PNG 解析成一个 TemplateWorkflowNode 直接入 map
         //    (Operation 用 NoOp 占位,SuccessTemplate 留 null —— 都不在这里配)
@@ -250,12 +303,12 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         _nodesByLabel[houHouNode.Label] = houHouNode;
 
         // "阿玖" OCR 节点:OcrHouHou 重试耗尽时的再退化路径(走 OcrHouHou 的 FailTemplate)。
-        // 命中后按 F;SuccessTemplate 由 ConfigureCommonNodes 接到 rwd1(对齐 OcrHouHou pattern:
+        // 命中后按 F;SuccessTemplate 由 ConfigureCommonNodes 接到 OcrRwd1(对齐 OcrHouHou pattern:
         // 都按 F 后接奖励弹窗序列)。FailTemplate 留 null → 自己失败时终止工作流。
         var ajiuNode = new OcrWorkflowNode(
             label: "OcrAjiu",
             maxRetries: MaxRetries,
-            successTemplate: null,  // 由 ConfigureCommonNodes wiring 段接 rwd1
+            successTemplate: null,  // 由 ConfigureCommonNodes wiring 段接 OcrRwd1
             roi: AjiuRoi,
             targetText: AjiuText,
             operation: (content, _) =>
@@ -271,6 +324,30 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             },
             overlay: _overlay);
         _nodesByLabel[ajiuNode.Label] = ajiuNode;
+
+        // "每日可领一次" OCR 节点:替代原 rwd1 模板匹配(模板匹配不稳定)。OCR 命中 →
+        // 点击固定 UI 区域 Rwd1ClickRect(原 rwd1 模板位置)。Operation 在 ctor 配好
+        // (画 OCR ROI + 点固定按钮区);SuccessTemplate 由 ConfigureCommonNodes 接 rwd2。
+        // 模式对齐 OcrActivityFull / OcrReadyToOpen / OcrHonestBusiness(OCR + 固定点击区)。
+        var rwd1Node = new OcrWorkflowNode(
+            label: "OcrRwd1",
+            maxRetries: MaxRetries,
+            successTemplate: null,  // 由 ConfigureCommonNodes switch 接 rwd2
+            roi: Rwd1Roi,
+            targetText: Rwd1Text,
+            operation: (content, _) =>
+            {
+                var safeRoi = ZzzImageUtils.ClampRoi(Rwd1Roi, content.Image.Width, content.Image.Height);
+                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                    _overlay,
+                    new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
+                    content,
+                    "OcrRwd1");
+                Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrRwd1 hit → click fixed button rect");
+                ZzzTriggerActions.ClickRect(content, Rwd1ClickRect);
+            },
+            overlay: _overlay);
+        _nodesByLabel[rwd1Node.Label] = rwd1Node;
 
         // "查看经营状况" OCR 节点:OcrTingmanSpecial 重试耗尽时的退化路径
         // (走 OcrTingmanSpecial 的 FailTemplate)。命中后点"识别出的文字所在 region"内随机位置
@@ -378,6 +455,28 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             overlay: _overlay);
         _nodesByLabel[shengyiXinglongNode.Label] = shengyiXinglongNode;
 
+        // "开店大吉" OCR 节点:挂在 OcrShengyiXinglong 之后,模式完全对齐
+        // (画 ROI + 按 ESC 关闭弹窗);SuccessTemplate 留 null → 自己失败终止。
+        var kaidianDajiNode = new OcrWorkflowNode(
+            label: "OcrKaidianDaji",
+            maxRetries: MaxRetries,
+            successTemplate: null,  // 由 ConfigureCommonNodes switch 显式留 null
+            roi: KaidianDajiRoi,
+            targetText: KaidianDajiText,
+            operation: (content, _) =>
+            {
+                var safeRoi = ZzzImageUtils.ClampRoi(KaidianDajiRoi, content.Image.Width, content.Image.Height);
+                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                    _overlay,
+                    new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
+                    content,
+                    "OcrKaidianDaji");
+                Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrKaidianDaji hit → press ESC (close grand opening popup)");
+                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+            },
+            overlay: _overlay);
+        _nodesByLabel[kaidianDajiNode.Label] = kaidianDajiNode;
+
         // 2) Configure:遍历 map 统一赋 Operation + SuccessTemplate(链装配硬编码 label 目标)
         ConfigureCommonNodes(_nodesByLabel);
 
@@ -418,7 +517,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// OcrTingmanSpecial → betterySkip → getBattery → null(链尾);daliyFin 和 OcrActivityFull 是
     /// 两道"日常已完成"早退检查(各自 SuccessTemplate = null,FailTemplate 接后继)。
     /// FailTemplate 分支:
-///   - OcrTingmanMaster → OcrHouHou → OcrAjiu → rwd1 → rwd2 → rwd4 → rwd5 → rwd6 → daliyF2(闭环)。
+///   - OcrTingmanMaster → OcrHouHou → OcrAjiu → OcrRwd1 → rwd2 → rwd4 → rwd5 → rwd6 → daliyF2(闭环)。
 ///   - OcrTingmanSpecial → OcrShopStatus → OcrYesterdayBill → shop2 → shop3 → shop4 → shop5 →
 ///     shop6 → OcrReadyToOpen → OcrHonestBusiness → OcrShengyiXinglong → null。
     /// 未知 label(模板 / 特殊):default 走 no-op log + SuccessTemplate = null(不连任何节点)。
@@ -473,6 +572,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                 // 通用"识别 → 点击识别区域"模板(betterySkip / getBattery 共用模式)。
                 // 挂在 OcrTingmanSpecial 之后:对话结束后跳过 betterySkip 提示,再点 getBattery 领电池。
                 case "betterySkip":
+                    node.MaxRetries = 15;
                     node.Operation = (content, result) =>
                     {
                         if (result == null) return;
@@ -493,20 +593,22 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.SuccessTemplate = null;  // 链尾:终止
                     break;
 
-                // rwd1 / rwd2 挂在 FailTemplate 分支 OcrHouHou 之后:
-                // 对齐 TestZzzTaskTrigger.RunSeqRwd1 / RunSeqRin 模式(都是 ClickMatchedArea)。
+                // rwd2 挂在 OcrRwd1 之后(走 FailTemplate 分支):
+                // 对齐 TestZzzTaskTrigger.RunSeqRin 模式(ClickMatchedArea)。
                 // rwd2 文件对应 TestZzzTaskTrigger 的 Rin 节点(seq9)。
-                case "rwd1":
+                case "rwd2":
                     node.Operation = (content, result) =>
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
                         ZzzTriggerActions.ClickMatchedArea(result, content);
                     };
-                    node.SuccessTemplate = nodesByLabel["rwd2"];
+                    node.SuccessTemplate = nodesByLabel["rwd35"];
                     break;
 
-                case "rwd2":
+                // rwd35 挂在 FailTemplate 分支 rwd2 之后:rwd2 后的额外奖励弹窗处理
+                // (对齐 rwd1 / rwd2 的 ClickMatchedArea 模式:命中后点击识别区域)。
+                case "rwd35":
                     node.Operation = (content, result) =>
                     {
                         if (result == null) return;
@@ -562,16 +664,23 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     break;
 
                 case "OcrHouHou":
-                    // 退化路径:吼吼先生 OCR 命中后按 F,SuccessTemplate 接 rwd1(继续走奖励弹窗序列);
+                    // 退化路径:吼吼先生 OCR 命中后按 F,SuccessTemplate 接 OcrRwd1(继续走奖励弹窗序列);
                     // FailTemplate = OcrAjiu(再退化:吼吼先生也失败时识别"阿玖")
-                    node.SuccessTemplate = nodesByLabel["rwd1"];
+                    node.SuccessTemplate = nodesByLabel["OcrRwd1"];
                     node.FailTemplate = nodesByLabel["OcrAjiu"];
                     break;
 
                 case "OcrAjiu":
-                    // 再退化路径:阿玖 OCR 命中后按 F,SuccessTemplate 接 rwd1(对齐 OcrHouHou pattern);
+                    // 再退化路径:阿玖 OCR 命中后按 F,SuccessTemplate 接 OcrRwd1(对齐 OcrHouHou pattern);
                     // FailTemplate 留 null → 自己失败终止
-                    node.SuccessTemplate = nodesByLabel["rwd1"];
+                    node.SuccessTemplate = nodesByLabel["OcrRwd1"];
+                    break;
+
+                case "OcrRwd1":
+                    // "每日可领一次" OCR 节点:替代原 rwd1 模板(模板匹配不稳定)。
+                    // OCR 命中 → 点击固定按钮区(Operation 在 ctor 配好);SuccessTemplate 接 rwd2
+                    // (继续走奖励弹窗序列)。
+                    node.SuccessTemplate = nodesByLabel["rwd2"];
                     break;
 
                 case "ContinueArrow":
@@ -661,8 +770,27 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     break;
 
                 case "OcrShengyiXinglong":
-                    // 商铺交互序列续:生意兴隆 OCR 命中后按 ESC 关弹窗;SuccessTemplate 留 null → 自己失败终止
+                    // 商铺交互序列续:生意兴隆 OCR 命中后按 ESC 关弹窗;SuccessTemplate 接 OcrKaidianDaji
+                    node.SuccessTemplate = nodesByLabel["OcrKaidianDaji"];
+                    break;
+
+                case "OcrKaidianDaji":
+                    // 商铺交互序列续:开店大吉 OCR 命中后按 ESC 关弹窗(对齐 OcrShengyiXinglong pattern);
+                    // SuccessTemplate 留 null → 自己失败终止
                     node.SuccessTemplate = null;
+                    break;
+
+                case "OcrMonthlyCardRemaining":
+                    // 挂在 OcrEnterGame 之后:月卡剩余 OCR 命中后点击 OCR 命中文字 bbox(识别区域);
+                    // SuccessTemplate 接 daliyF2(命中后进入正常主路径)。
+                    node.SuccessTemplate = nodesByLabel["daliyF2"];
+                    break;
+
+                case "OcrEnterGame":
+                    // 链真正首入口:点击进入游戏 OCR 命中后点击 OCR 命中文字 bbox(识别区域);
+                    // SuccessTemplate 接 OcrMonthlyCardRemaining(命中后进入月卡剩余早退检查)。
+                    // FailTemplate 留 null → 自己失败时终止工作流。
+                    node.SuccessTemplate = nodesByLabel["OcrMonthlyCardRemaining"];
                     break;
 
                 default:
