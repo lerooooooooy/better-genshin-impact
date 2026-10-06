@@ -8,7 +8,7 @@ using BetterGenshinImpact.View.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using Ookii.Dialogs.Wpf;
+using Wpf.Ui.Violeta.Win32;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -41,6 +41,7 @@ public partial class MusicPageViewModel : ViewModel
     private CancellationTokenSource? _refreshCancellationTokenSource;
     private CancellationTokenSource? _coverLoadCancellationTokenSource;
     private Task? _sessionTask;
+    private IReadOnlyList<PerformanceScore> _activePlaybackQueue = [];
     private bool _isLoading;
     private bool _isUpdatingSelection;
     private bool _isSeeking;
@@ -330,7 +331,7 @@ public partial class MusicPageViewModel : ViewModel
     [RelayCommand]
     private async Task ChooseFolderAsync()
     {
-        var dialog = new VistaFolderBrowserDialog
+        var dialog = new OpenFolderDialog
         {
             Description = "选择曲谱根目录",
             UseDescriptionForTitle = true,
@@ -736,7 +737,8 @@ public partial class MusicPageViewModel : ViewModel
         }
 
         SaveAllPreferences();
-        var queue = MusicItems.Where(x => x.IsValid).ToList();
+        // 播放队列应与用户当前看到的筛选结果保持一致，上一首、下一首和自动续播都使用该快照。
+        var queue = MusicItemsView.Cast<PerformanceScore>().Where(x => x.IsValid).ToList();
         var startIndex = queue.IndexOf(SelectedMusicItem);
         if (startIndex < 0)
         {
@@ -747,11 +749,17 @@ public partial class MusicPageViewModel : ViewModel
         {
             InputMode = GetInputMode(),
             PlaybackMode = PlaybackMode,
+            Speed = Config.MusicConfig.Speed,
+            CustomBpm = Config.MusicConfig.UseCustomBpm
+                ? Math.Clamp(Config.MusicConfig.CustomBpm, 1, 1000)
+                : null,
+            AutoSwitchInstrument = Config.MusicConfig.AutoSwitchInstrument,
             StartPosition = restoreSavedPosition
                 ? GetSavedPlaybackPosition(SelectedMusicItem)
                 : TimeSpan.Zero
         };
 
+        _activePlaybackQueue = queue;
         _sessionTask = new TaskRunner().RunThreadAsync(
             () => _playbackService.RunPlaylistAsync(
                 queue,
@@ -981,6 +989,7 @@ public partial class MusicPageViewModel : ViewModel
 
     private void OnPlaybackSnapshotChanged(object? sender, PlaybackSnapshot snapshot)
     {
+        var playbackQueue = _activePlaybackQueue;
         Application.Current?.Dispatcher.BeginInvoke(() =>
         {
             if (!_isSeeking)
@@ -995,11 +1004,10 @@ public partial class MusicPageViewModel : ViewModel
             IsPlaying = snapshot.State == MusicPlaybackState.Playing;
             IsPaused = snapshot.State == MusicPlaybackState.Paused;
 
-            var queue = MusicItems.Where(x => x.IsValid).ToList();
             if (snapshot.QueueIndex >= 0
-                && snapshot.QueueIndex < queue.Count)
+                && snapshot.QueueIndex < playbackQueue.Count)
             {
-                var currentItem = queue[snapshot.QueueIndex];
+                var currentItem = playbackQueue[snapshot.QueueIndex];
                 CurrentMusicItem = currentItem;
                 if (!ReferenceEquals(SelectedMusicItem, currentItem))
                 {

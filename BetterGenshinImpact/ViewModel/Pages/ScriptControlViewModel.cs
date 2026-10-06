@@ -12,7 +12,6 @@ using BetterGenshinImpact.Model;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.View.Controls.Webview;
 using BetterGenshinImpact.View.Pages.View;
-using BetterGenshinImpact.View.Behavior;
 using BetterGenshinImpact.View.Windows;
 using BetterGenshinImpact.View.Windows.Editable;
 using BetterGenshinImpact.ViewModel.Pages.View;
@@ -317,6 +316,7 @@ public partial class ScriptControlViewModel : ViewModel
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
         uiMessageBox.SourceInitialized += (s, e) => WindowHelper.TryApplySystemBackdrop(uiMessageBox);
+        WindowHelper.CenterOnVisibleOwner(uiMessageBox);
 
         void OnQuestionButtonOnClick(object sender, RoutedEventArgs args)
         {
@@ -884,11 +884,7 @@ public partial class ScriptControlViewModel : ViewModel
                 "请选择需要添加的地图追踪任务",
                 "请选择需要添加的地图追踪任务",
                 stackPanel,
-                new Size(600, 720),
-                new PromptDialogConfig
-                {
-                    DisableAutoTranslate = true
-                });
+                new Size(600, 720));
 
             if (!string.IsNullOrEmpty(result))
             {
@@ -1624,6 +1620,7 @@ public partial class ScriptControlViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(uiMessageBox);
         await uiMessageBox.ShowDialogAsync();
         editor.DataContext = null;
     }
@@ -1668,7 +1665,7 @@ public partial class ScriptControlViewModel : ViewModel
                 Owner = Application.Current.MainWindow,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
             };
-            AutoTranslateInterceptor.SetEnableAutoTranslate(uiMessageBox, false);
+            WindowHelper.CenterOnVisibleOwner(uiMessageBox);
             uiMessageBox.ShowDialogAsync();
 
             // 由于 JsScriptSettingsObject 的存在，这里只能手动再次保存配置
@@ -1848,7 +1845,7 @@ public partial class ScriptControlViewModel : ViewModel
             }
 
             var file = Path.Combine(ScriptGroupPath, $"{scriptGroup.Name}.json");
-            File.WriteAllText(file, scriptGroup.ToJson());
+            scriptGroup.WriteToFileAtomically(file);
         }
         catch (Exception e)
         {
@@ -2175,6 +2172,7 @@ public partial class ScriptControlViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(uiMessageBox);
 
         var result = await uiMessageBox.ShowDialogAsync();
         if (result == MessageBoxResult.Primary)
@@ -2363,6 +2361,7 @@ public partial class ScriptControlViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(uiMessageBox);
 
         var result = await uiMessageBox.ShowDialogAsync();
         if (result == MessageBoxResult.Primary)

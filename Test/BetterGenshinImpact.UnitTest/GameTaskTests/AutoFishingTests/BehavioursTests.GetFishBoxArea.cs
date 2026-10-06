@@ -1,8 +1,8 @@
+using BetterGenshinImpact.Core.Mask;
 using BetterGenshinImpact.GameTask.AutoFishing;
 using BetterGenshinImpact.GameTask.Model.Area;
 using CsTrees;
 using CsTrees.Composites;
-using CsTrees.FluentBuilder;
 using Microsoft.Extensions.Time.Testing;
 using OpenCvSharp;
 using System;
@@ -26,14 +26,14 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.AutoFishingTests
         {
             //
             Mat mat = new Mat(@$"..\..\..\Assets\AutoFishing\{screenshot1080p}");
-            var imageRegion = new GameCaptureRegion(mat, 0, 0,  drawContent: new FakeDrawContent());
+            var imageRegion = new GameCaptureRegion(mat, 0, 0, drawingBoard: NullMaskWindowDrawingBoard.Instance);
 
             CsTrees.Blackboard.Blackboard blackboard = new CsTrees.Blackboard.Blackboard();
 
-            var sut = TreeBuilder.Create()
+            var sut = new AutoFishingBuilder()
                 .WithBlackboard(blackboard)
-                    .Sequence("用例")
-                        .ScreenshotQueue("用例", [imageRegion])
+                    .Sequence("用例", false)
+                        .LeafWithBlackboard(bb => new ScreenshotQueue("用例", [imageRegion], bb!))
                         .GetFishBoxArea("-", new FakeLogger(), false)
                     .End()
                 .End()
@@ -54,23 +54,23 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.AutoFishingTests
         {
             //
             Mat mat1 = new Mat(@$"..\..\..\Assets\AutoFishing\202503012143011486@900p.png");
-            var imageRegion1 = new GameCaptureRegion(mat1, 0, 0, drawContent: new FakeDrawContent());
+            var imageRegion1 = new GameCaptureRegion(mat1, 0, 0, drawingBoard: NullMaskWindowDrawingBoard.Instance);
             Mat mat2 = new Mat(@$"..\..\..\Assets\AutoFishing\20250306111752769_GetFishBoxArea_Succeeded.png");
-            var imageRegion2 = new GameCaptureRegion(mat2, 0, 0, drawContent: new FakeDrawContent());
+            var imageRegion2 = new GameCaptureRegion(mat2, 0, 0, drawingBoard: NullMaskWindowDrawingBoard.Instance);
             FakeTimeProvider fakeTimeProvider = new FakeTimeProvider();
             FakeLogger logger = new FakeLogger();
 
             CsTrees.Blackboard.Blackboard blackboard = new CsTrees.Blackboard.Blackboard();
 
-            var sut = TreeBuilder.Create()
+            var sut = new AutoFishingBuilder()
                 .WithBlackboard(blackboard)
-                    .Sequence("用例")
-                        .ScreenshotQueue("用例", [imageRegion1, imageRegion2])
+                    .Sequence("用例", false)
+                        .LeafWithBlackboard(bb => new ScreenshotQueue("用例", [imageRegion1, imageRegion2], bb!))
                         .Parallel("-", new ParallelPolicy.SuccessOnOne())
                             .CheckRaiseHook("-", logger, fakeTimeProvider)
-                            .SequenceWithMemory("-")
+                            .Sequence("-", true)
                                 .GetFishBoxArea("-", logger, false, fakeTimeProvider)
-                                .Fishing("-", logger, false, new FakeInputSimulator(), fakeTimeProvider, drawContent: new FakeDrawContent())
+                                .Fishing("-", logger, false, new FakeInputChannel(), fakeTimeProvider)
                             .End()
                         .End()
                     .End()

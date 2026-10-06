@@ -5,21 +5,28 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using BetterGenshinImpact.Core.Mask;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using BetterGenshinImpact.Core.Recognition.ONNX;
 using BetterGenshinImpact.Core.Monitor;
 using BetterGenshinImpact.GameTask;
+using BetterGenshinImpact.GameTask.AutoSkip.Audio;
 using BetterGenshinImpact.GameTask.Music.Service;
+using BetterGenshinImpact.GameTask.Runtime;
+using BetterGenshinImpact.GameTask.Runtime.Win32;
+using BetterGenshinImpact.GameTask.Runtime.WebPage;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Helpers.Extensions;
 using BetterGenshinImpact.Helpers.Win32;
 using BetterGenshinImpact.Service;
 using BetterGenshinImpact.Service.ChildSession;
 using BetterGenshinImpact.Service.Instance;
+using BetterGenshinImpact.Service.I18n;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notifier;
 using BetterGenshinImpact.View;
+using BetterGenshinImpact.View.Mask;
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.View.Windows;
 using BetterGenshinImpact.ViewModel;
@@ -68,8 +75,12 @@ public partial class App : Application
                 Directory.CreateDirectory(logFolder);
                 var logFile = Path.Combine(logFolder, "better-genshin-impact.log");
                 var instanceContext = InstanceBootstrap.Current.Context;
+                // 网页版实例带上实例名，例如 WebView(小号A):S1:P1234:T…
+                var instanceTypeLabel = instanceContext.InstanceName is { } instanceName
+                    ? $"{instanceContext.InstanceType}({instanceName})"
+                    : instanceContext.InstanceType.ToString();
                 var instanceIdentity =
-                    $"{instanceContext.InstanceType}:S{instanceContext.WindowsSessionId}:P{instanceContext.ProcessId}:T{instanceContext.StartedAt.ToUnixTimeMilliseconds()}";
+                    $"{instanceTypeLabel}:S{instanceContext.WindowsSessionId}:P{instanceContext.ProcessId}:T{instanceContext.StartedAt.ToUnixTimeMilliseconds()}";
 
                 var richTextBox = new RichTextBoxImpl();
                 services.AddSingleton<IRichTextBox>(richTextBox);
@@ -89,34 +100,37 @@ public partial class App : Application
                     .MinimumLevel.Debug()
                     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                     .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Warning);
-                if (all.MaskWindowConfig is { MaskEnabled: true, ShowLogBox: true })
-                {
-                    loggerConfiguration.WriteTo.RichTextBox(richTextBox, LogEventLevel.Information,
-                        "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}");
-                }
+                // 日志遮罩输出：仅当“遮罩启用且日志框可见”时才真正写入，隐藏时避免不必要的 UI 开销（#3161）。
+                // 条件改为运行时每次写入时动态判断，因此启动后通过快捷键切换 ShowLogBox 也能即时恢复日志（#3357）。
+                loggerConfiguration.WriteTo.Sink(
+                    new ConditionalLogEventSink(
+                        new LoggerConfiguration()
+                            .WriteTo.RichTextBox(richTextBox, LogEventLevel.Information,
+                                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                            .CreateLogger(),
+                        () => all.MaskWindowConfig is { MaskEnabled: true, ShowLogBox: true }),
+                    LogEventLevel.Information);
 
                 Log.Logger = loggerConfiguration.CreateLogger();
-                services.AddSingleton<IMissingTranslationReporter, SupabaseMissingTranslationReporter>();
-                services.AddSingleton<ITranslationService, JsonTranslationService>();
-
                 services.AddLogging(c => c.AddSerilog());
-                // if ("zh-Hans".Equals(all.OtherConfig.UiCultureInfoName, StringComparison.OrdinalIgnoreCase))
-                // {
-                //     services.AddLogging(c => c.AddSerilog());
-                // }
-                // else
-                // {
-                //     services.AddLogging(logging =>
-                //     {
-                //         logging.ClearProviders();
-                //         logging.SetMinimumLevel(LogLevel.Debug);
-                //         logging.AddFilter("Microsoft", LogLevel.Warning);
-                //         logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Warning);
-                //         logging.Services.AddSingleton<ILoggerProvider, TranslatingSerilogLoggerProvider>();
-                //     });
-                // }
 
                 services.AddLocalization();
+                var i18nService = I18nService.Instance;
+                var uiLanguage = all.OtherConfig.UiCultureInfoName switch
+                {
+                    "zh-CN" => "zh-Hans",
+                    "en-US" => "en",
+                    "ja-JP" => "ja",
+                    _ => all.OtherConfig.UiCultureInfoName,
+                };
+                if (uiLanguage != all.OtherConfig.UiCultureInfoName)
+                {
+                    all.OtherConfig.UiCultureInfoName = uiLanguage;
+                    configService.Save();
+                }
+
+                i18nService.ChangeLanguage(uiLanguage);
+                services.AddSingleton(i18nService);
 
                 services.AddNavigationViewPageProvider();
                 services.AddSingleton(InstanceBootstrap.Current);
@@ -177,7 +191,32 @@ public partial class App : Application
                 services.AddSingleton<IRelativeMouseInputMonitorFactory, RelativeMouseInputMonitorFactory>();
                 services.AddSingleton<OverlayMetricsService>();
                 services.AddSingleton<CustomHtmlMaskService>();
+
+                // 遮罩窗口：业务侧只依赖 IMaskWindowDrawingBoard / IMaskWindowHost / IMaskWindowMapState
+                services.AddSingleton<MaskWindowDrawingBoard>();
+                services.AddSingleton<IMaskWindowDrawingBoard>(sp => sp.GetRequiredService<MaskWindowDrawingBoard>());
+                services.AddSingleton<IMaskWindowSnapshotSource<MaskWindowDrawingSnapshot>>(sp => sp.GetRequiredService<MaskWindowDrawingBoard>());
+                services.AddSingleton<MaskWindowMapState>();
+                services.AddSingleton<IMaskWindowMapState>(sp => sp.GetRequiredService<MaskWindowMapState>());
+                services.AddSingleton<IMaskWindowSnapshotSource<MaskWindowMapSnapshot>>(sp => sp.GetRequiredService<MaskWindowMapState>());
+                services.AddSingleton<MaskWindowViewModel>();
+                services.AddTransient<MaskWindow>();
+                services.AddSingleton<Func<MaskWindow>>(sp => () => sp.GetRequiredService<MaskWindow>());
+                services.AddSingleton<IMaskWindowHost, MaskWindowHost>();
+                services.AddSingleton<DialogueOptionVoiceDiagnosticState>();
+                services.AddSingleton<DialogueOptionVoiceDiagnosticService>();
+                services.AddHostedService(sp => sp.GetRequiredService<DialogueOptionVoiceDiagnosticService>());
                 services.AddSingleton<TaskTriggerDispatcher>();
+                // 游戏运行环境：按实例类型选定 Provider，见 Docs/design/game-runtime.md
+                services.AddSingleton<Win32RuntimeProvider>();
+                services.AddSingleton<IGameRuntimeProvider>(sp => sp.GetRequiredService<Win32RuntimeProvider>());
+                services.AddSingleton<IGameRuntimeProvider, WebPageRuntimeProvider>();
+                services.AddTransient<CloudWebHostWindow>();
+                services.AddSingleton<Func<CloudWebHostWindow>>(sp => () => sp.GetRequiredService<CloudWebHostWindow>());
+                services.AddSingleton<GameRuntimeService>();
+                // 云原神网页版实例：实例名存储与启动器（Primary 首页使用）
+                services.AddSingleton<WebViewInstanceStore>();
+                services.AddSingleton<WebViewInstanceLauncher>();
                 services.AddSingleton<RecognitionTemplateAssetService>();
                 services.AddSingleton<RecognitionTemplateEditorService>();
                 services.AddSingleton<NotificationService>();
@@ -190,6 +229,7 @@ public partial class App : Application
                 services.AddSingleton<IMusicTimelineBuilder, MusicTimelineBuilder>();
                 services.AddSingleton<IMusicLibraryService, MusicLibraryService>();
                 services.AddSingleton<IMusicCoverService, MusicCoverService>();
+                services.AddSingleton<IMusicInstrumentSwitcher, MusicInstrumentSwitcher>();
                 services.AddSingleton<IKeyInputTransport, PostMessageKeyInputTransport>();
                 services.AddSingleton<IKeyInputTransport, SendInputKeyInputTransport>();
                 services.AddSingleton<IMusicPlaybackService, MusicPlaybackService>();
@@ -258,7 +298,10 @@ public partial class App : Application
             RegisterEvents();
             await _host.StartAsync();
             ServerTimeHelper.Initialize(_host.Services.GetRequiredService<IServerTimeProvider>());
-            await UrlProtocolHelper.RegisterAsync();
+            if (InstanceBootstrap.Current.Context.IsRoot)
+            {
+                await UrlProtocolHelper.RegisterAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -286,8 +329,8 @@ public partial class App : Application
                 try
                 {
                     System.Windows.Forms.MessageBox.Show(
-                        $"{TranslateText("应用程序启动失败：")}{ex.Message}",
-                        TranslateText("BetterGI 启动失败"),
+                        $"应用程序启动失败：{ex.Message}",
+                        "BetterGI 启动失败",
                         System.Windows.Forms.MessageBoxButtons.OK,
                         System.Windows.Forms.MessageBoxIcon.Error);
                 }
@@ -310,6 +353,16 @@ public partial class App : Application
         base.OnExit(e);
 
         ConsoleHelper.WriteLine("BetterGI 应用程序正在关闭...");
+
+        // 写入防抖窗口内尚未落盘的配置改动
+        try
+        {
+            _host.Services.GetService<IConfigService>()?.Flush();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine(ex);
+        }
 
         TempManager.CleanUp();
 
@@ -432,7 +485,7 @@ public partial class App : Application
         // 通过日志遮罩提示用户：非致命异常已记录。
         if (!isTerminating)
         {
-            var nonFatalMessage = TranslateText("发生非致命异常，已记录日志，请查看日志详情。");
+            const string nonFatalMessage = "发生非致命异常，已记录日志，请查看日志详情。";
             GetLogger<App>().LogWarning(nonFatalMessage);
             return false;
         }
@@ -449,7 +502,7 @@ public partial class App : Application
         }
 
         // 确认 Dispatcher 可用后才记录"正在弹窗"，避免与实际行为不一致。
-        var popupShownMessage = TranslateText("发生致命异常，正在弹窗提示，同时已记录日志。");
+        const string popupShownMessage = "发生致命异常，正在弹窗提示，同时已记录日志。";
         GetLogger<App>().LogWarning(popupShownMessage);
 
         try
@@ -482,8 +535,7 @@ public partial class App : Application
                 // 只为"UI 是否开始执行"设置超时：UI 线程被阻塞/死锁时避免无限等待。
                 if (!startedSignal.Wait(TimeSpan.FromSeconds(3)))
                 {
-                    GetLogger<App>().LogWarning(
-                        TranslateText("弹窗调度超时，异常已记录，进程即将退出。"));
+                    GetLogger<App>().LogWarning("弹窗调度超时，异常已记录，进程即将退出。");
                     return false;
                 }
 
@@ -497,21 +549,6 @@ public partial class App : Application
         {
             // 弹窗失败不影响进程退出。
             return false;
-        }
-    }
-
-    /// <summary>
-    /// 翻译一条异常提示文本。翻译服务不可用时返回原文。
-    /// </summary>
-    private static string TranslateText(string text)
-    {
-        try
-        {
-            return ServiceProvider.GetService<ITranslationService>()?.Translate(text) ?? text;
-        }
-        catch
-        {
-            return text;
         }
     }
 

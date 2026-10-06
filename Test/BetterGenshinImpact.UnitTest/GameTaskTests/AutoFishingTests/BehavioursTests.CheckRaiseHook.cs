@@ -1,9 +1,9 @@
+using BetterGenshinImpact.Core.Mask;
 using BetterGenshinImpact.GameTask.AutoFishing;
 using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.GameTask.Model.Area.Converter;
 using CsTrees;
 using CsTrees.Composites;
-using CsTrees.FluentBuilder;
 using Microsoft.Extensions.Time.Testing;
 using OpenCvSharp;
 using System;
@@ -25,9 +25,9 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.AutoFishingTests
             //
             Mat mat = new Mat(@$"..\..\..\Assets\AutoFishing\20250314164703100_FishBite_Succeeded_FP.png");
 
-            FakeInputSimulator input = new FakeInputSimulator();
-            FakeDrawContent drawContent = new FakeDrawContent();
-            var imageRegion1 = new GameCaptureRegion(mat, 0, 0, new DesktopRegion(input.Mouse), converter: new ScaleConverter(1d), drawContent);
+            FakeInputChannel input = new FakeInputChannel();
+            IMaskWindowDrawingBoard drawingBoard = NullMaskWindowDrawingBoard.Instance;
+            var imageRegion1 = new GameCaptureRegion(mat, 0, 0, new DesktopRegion(), converter: new ScaleConverter(1d), drawingBoard);
 
             CsTrees.Blackboard.Blackboard blackboard = new CsTrees.Blackboard.Blackboard();
 
@@ -36,13 +36,13 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.AutoFishingTests
 
             //
 
-            var sut = TreeBuilder.Create()
+            var sut = new AutoFishingBuilder()
                 .WithBlackboard(blackboard)
-                    .Sequence("用例")
-                        .ScreenshotQueue("用例", [imageRegion1])
+                    .Sequence("用例", false)
+                        .LeafWithBlackboard(bb => new ScreenshotQueue("用例", [imageRegion1], bb!))
                         .Parallel("下杆中", new ParallelPolicy.SuccessOnOne())
                             .CheckThrowRod("检查抛竿结果", logger, timeProvider)    // todo 后面串联一个召回率高的下杆中检测方法
-                            .FishBite("自动提竿", logger, input, OcrService, drawContent)
+                            .CheckFishBite("自动提竿", logger, OcrService)
                             .FishBiteTimeout("下杆超时检查", 15, logger, input, timeProvider)
                         .End()
                     .End()
@@ -57,19 +57,19 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.AutoFishingTests
 
             //
             mat = new Mat(@$"..\..\..\Assets\AutoFishing\20250306111749714_CheckThrowRod_Succeeded.png");   // 一张正常下杆的图片
-            var imageRegion2 = new GameCaptureRegion(mat, 0, 0, new DesktopRegion(input.Mouse), converter: new ScaleConverter(1d), drawContent);
+            var imageRegion2 = new GameCaptureRegion(mat, 0, 0, new DesktopRegion(), converter: new ScaleConverter(1d), drawingBoard);
 
             blackboard = new CsTrees.Blackboard.Blackboard();
 
-            sut = TreeBuilder.Create()
+            sut = new AutoFishingBuilder()
                 .WithBlackboard(blackboard)
-                    .Sequence("用例")
-                        .ScreenshotQueue("用例", [imageRegion1, imageRegion2, imageRegion2])
+                    .Sequence("用例", false)
+                        .LeafWithBlackboard(bb => new ScreenshotQueue("用例", [imageRegion1, imageRegion2, imageRegion2], bb!))
                         .Parallel("拉条中", new ParallelPolicy.SuccessOnOne())
                             .CheckRaiseHook("检查提竿结果", logger, timeProvider)
-                            .SequenceWithMemory("拉条序列")
+                            .Sequence("拉条序列", true)
                                 .GetFishBoxArea("等待拉条出现", logger, false, timeProvider)
-                                .Fishing("钓鱼拉条", logger, false, input, timeProvider, drawContent)
+                                .Fishing("钓鱼拉条", logger, false, input, timeProvider)
                             .End()
                         .End()
                     .End()

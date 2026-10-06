@@ -42,7 +42,7 @@ public class BgiOnnxModel
     /// <summary>
     /// 用于捡东西等的大世界模型
     /// </summary>
-    public static readonly BgiOnnxModel BgiWorld = Register("BgiTree", @"Assets\Model\World\bgi_world.onnx");
+    public static readonly BgiOnnxModel BgiWorld = Register("BgiWorld", @"Assets\Model\World\bgi_world.onnx");
 
     /// <summary>
     /// 矿物识别模型
@@ -60,6 +60,12 @@ public class BgiOnnxModel
     /// </summary>
     public static readonly BgiOnnxModel BgiQClassify =
         Register("BgiQClassify", @"Assets\Model\Common\q_classify_sim.onnx");
+
+    /// <summary>
+    /// E技能就绪分类模型
+    /// </summary>
+    public static readonly BgiOnnxModel BgiEClassify =
+        Register("BgiEClassify", @"Assets\Model\Common\e_classify_sim.onnx");
 
     /// <summary>
     /// 队伍配置角色头像识别模型

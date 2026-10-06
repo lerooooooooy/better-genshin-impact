@@ -6,6 +6,7 @@ using BetterGenshinImpact.GameTask.AutoPathing;
 using BetterGenshinImpact.GameTask.AutoPathing.Model;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Helpers.Ui;
+using WindowHelper = BetterGenshinImpact.Helpers.Ui.WindowHelper;
 using BetterGenshinImpact.Model;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.View.Controls.Drawer;
@@ -230,6 +231,7 @@ public partial class MapPathingViewModel : ViewModel
             Owner = Application.Current.MainWindow,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
         };
+        WindowHelper.CenterOnVisibleOwner(messageBox);
 
         var result = await messageBox.ShowDialogAsync();
         if (result == Wpf.Ui.Controls.MessageBoxResult.Primary)
