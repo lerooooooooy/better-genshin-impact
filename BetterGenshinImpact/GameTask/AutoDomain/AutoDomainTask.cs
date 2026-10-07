@@ -322,6 +322,11 @@ public partial class AutoDomainTask : ISoloTask<Dictionary<string, int>>
 
                 // 2. 执行战斗（战斗线程、视角线程、检测战斗完成线程）
                 Logger.LogInformation("自动秘境：{Text}", "2. 执行战斗策略");
+                // 仅 TXT 模式下 string 键路径会查替换表;Combo/JSON 分支走 GIActions 自然豁免。
+                // using var 保证战斗结束或中途异常时撤销,不影响下一轮。
+                using var keyLease = _config.EnableCombatKeySubstitution && _config.CombatKeyMap.Count > 0
+                    ? CombatKeySubstitution.Install(_config.CombatKeyMap)
+                    : null;
                 await StartFight(combatScenes, combatCommands);
                 combatScenes.AfterTask();
             }

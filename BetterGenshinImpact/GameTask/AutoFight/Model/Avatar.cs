@@ -25,6 +25,7 @@ using BetterGenshinImpact.ViewModel.Windows;
 using BetterGenshinImpact.GameTask.AutoPathing;
 using BetterGenshinImpact.GameTask.AutoPathing.Model.Enum;
 using BetterGenshinImpact.Core.Recognition.ONNX;
+using BetterGenshinImpact.GameTask.AutoDomain;
 using Compunet.YoloSharp;
 using Compunet.YoloSharp.Data;
 using Microsoft.Extensions.DependencyInjection;
@@ -1223,17 +1224,20 @@ public class Avatar
     // 鼠标键（VK_LBUTTON、VK_RBUTTON、VK_MBUTTON、VK_XBUTTON1、VK_XBUTTON2）由输入通道转成对应的鼠标键
     public void KeyDown(string key)
     {
-        InputHub.Foreground.Keyboard.KeyDown(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(key)));
+        var actual = CombatKeySubstitution.TrySubstitute(key) ?? key;
+        InputHub.Foreground.Keyboard.KeyDown(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(actual)));
     }
 
     public void KeyUp(string key)
     {
-        InputHub.Foreground.Keyboard.KeyUp(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(key)));
+        var actual = CombatKeySubstitution.TrySubstitute(key) ?? key;
+        InputHub.Foreground.Keyboard.KeyUp(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(actual)));
     }
 
     public void KeyPress(string key)
     {
-        InputHub.Foreground.Keyboard.KeyPress(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(key)));
+        var actual = CombatKeySubstitution.TrySubstitute(key) ?? key;
+        InputHub.Foreground.Keyboard.KeyPress(KeyBindingsSettingsPageViewModel.MappingKey(User32Helper.ToVk(actual)));
     }
 
     /// <summary>

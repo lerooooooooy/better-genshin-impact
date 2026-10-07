@@ -99,4 +99,23 @@ public partial class AutoDomainConfig : ObservableObject
     [ObservableProperty]
     private bool _rewardRecognitionEnabled = false;
 
+    /// <summary>
+    /// 是否在秘境战斗期间按 <see cref="CombatKeyMap"/> 替换 TXT 战斗脚本里的按键。
+    /// 仅影响 string 键路径(Avatar.KeyDown/KeyUp/KeyPress),Combo / JSON 模式不受影响。
+    /// </summary>
+    [ObservableProperty]
+    private bool _enableCombatKeySubstitution = false;
+
+    /// <summary>
+    /// 战斗按键替换映射:源键 → 目标键。仅在 <see cref="EnableCombatKeySubstitution"/> 开启时生效,
+    /// 严格相等匹配(不区分大小写差异)。
+    /// 默认 e → y、q → i,适配左手/特定键盘布局把 E/Q 移到 Y/I 的需求。
+    /// </summary>
+    [ObservableProperty]
+    private Dictionary<string, string> _combatKeyMap = new()
+    {
+        ["e"] = "y",
+        ["q"] = "i",
+    };
+
 }
