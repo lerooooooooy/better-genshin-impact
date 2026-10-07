@@ -2,10 +2,13 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Interop;
 using System.Windows.Media;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Core.Input;
+using BetterGenshinImpact.Core.Input.Backends.Win32;
 using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.GameTask.Zzz;
@@ -35,6 +38,26 @@ public partial class ZzzStartPageViewModel : ViewModel
     [ObservableProperty] private bool _isRunning;
 
     [ObservableProperty] private string _statusText = "已停止";
+
+    [ObservableProperty] private IEnumerable<string> _testKeyOptions = new[] { "F2", "ESC", "F", "Space" };
+
+    [ObservableProperty] private string _selectedTestKey = "F2";
+
+    [ObservableProperty] private bool _useBackgroundForTest;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedTestWindowDisplay))]
+    private nint _selectedTestHwnd;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedTestWindowDisplay))]
+    private string _selectedTestWindowTitle = string.Empty;
+
+    public string SelectedTestWindowDisplay => SelectedTestHwnd == IntPtr.Zero
+        ? "(未选择 — 默认 FindZzzHandle)"
+        : $"0x{SelectedTestHwnd:X} — {Truncate(SelectedTestWindowTitle, 40)}";
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "...";
 
     public AllConfig Config { get; set; }
 
@@ -176,6 +199,93 @@ public partial class ZzzStartPageViewModel : ViewModel
                     Config.ZzzInstallPath = p;
                 }
             });
+        }
+    }
+
+    [RelayCommand]
+    private async Task OnTestSendKey()
+    {
+        // 先找 hwnd:优先用选中的窗口,没选才退到 FindZzzHandle(默认行为)
+        var hwnd = SelectedTestHwnd != IntPtr.Zero
+            ? SelectedTestHwnd
+            : SystemControl.FindZzzHandle();
+        if (hwnd == IntPtr.Zero)
+        {
+            Debug.WriteLine("[ZZZ-TestButton] 未找到目标窗口,跳过发送");
+            Toast.Warning("未找到目标窗口");
+            return;
+        }
+
+        // 前台模式:把 ZZZ 切到前台再等 2s,期间用户能看到窗口到位;
+        // 后台模式不切前台(否则就失去"后台不抢焦点"的对比意义)。
+        if (!UseBackgroundForTest && User32.GetForegroundWindow() != hwnd)
+        {
+            SystemControl.ActivateWindow(hwnd);
+        }
+
+        // 2 秒延迟,async 让 UI 在等待期间不冻结
+        await Task.Delay(2000);
+
+        if (!_testKeyMap.TryGetValue(SelectedTestKey, out var vk))
+        {
+            vk = User32.VK.VK_F2;
+        }
+
+        if (UseBackgroundForTest)
+        {
+            // 后台走 InputHub.Background(内部 Win32InputBackend + PostMessageChannel + PostMessageSimulator)。
+            // InputHub 是全局单例,临时 Attach 一个绑到 ZZZ hwnd 的 Win32 后端,测完恢复原后端,
+            // 避免覆盖 GameRuntimeService 给原神设置的后端。
+            // 后台路径:发完一次后等 300ms 再发一次(共两次,中间间隔 300ms)
+            var old = InputHub.Backend;
+            try
+            {
+                InputHub.Attach(new Win32InputBackend(hwnd));
+                InputHub.Background.Keyboard
+                    .KeyDown(vk).Sleep(50).KeyUp(vk)
+                    .Sleep(300)
+                    .KeyDown(vk).Sleep(50).KeyUp(vk);
+                Debug.WriteLine($"[ZZZ-TestButton] sent {SelectedTestKey} x2 via InputHub.Background (PostMessage, 间隔 300ms) hwnd=0x{hwnd:X}");
+            }
+            finally
+            {
+                InputHub.Attach(old);
+            }
+        }
+        else
+        {
+            // 前台走 InputHub.Foreground:内部固定是 SendInputChannel,不依赖 hwnd 绑定,
+            // 即使当前 InputHub 没 Attach 也能用(默认后端就是 Win32(IntPtr.Zero))。
+            InputHub.Foreground.Keyboard.KeyDown(vk).Sleep(50).KeyUp(vk);
+            Debug.WriteLine($"[ZZZ-TestButton] sent {SelectedTestKey} via InputHub.Foreground (SendInput)");
+        }
+    }
+
+    private static readonly Dictionary<string, User32.VK> _testKeyMap = new()
+    {
+        { "F2", User32.VK.VK_F2 },
+        { "ESC", User32.VK.VK_ESCAPE },
+        { "F", User32.VK.VK_F },
+        { "Space", User32.VK.VK_SPACE },
+    };
+
+    [RelayCommand]
+    private void OnSelectTestWindow()
+    {
+        var picker = new PickerWindow();
+        if (picker.PickCaptureTarget(new WindowInteropHelper(UIDispatcherHelper.MainWindow).Handle, out var hWnd))
+        {
+            if (hWnd != IntPtr.Zero)
+            {
+                SelectedTestHwnd = hWnd;
+                var (title, _, _) = DescribeWindow(hWnd);
+                SelectedTestWindowTitle = title;
+                Debug.WriteLine($"[ZZZ-TestButton] 选定测试窗口 hwnd=0x{hWnd:X} title=\"{title}\"");
+            }
+            else
+            {
+                Toast.Error("选择的窗体句柄为空！");
+            }
         }
     }
 

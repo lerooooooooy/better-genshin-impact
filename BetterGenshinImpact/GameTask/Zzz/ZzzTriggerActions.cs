@@ -27,6 +27,26 @@ public static class ZzzTriggerActions
 
     private static readonly Random _rng = Random.Shared;
 
+    // Background 路径 PostMessageSimulator 复用缓存:同一 hwnd 复用同一实例,
+    // hwnd 变化(ZZZ 重启/切换实例)时重建。dispatcher timer 单线程调 OnCapture,
+    // 本质无需锁;此处 lock 兜底防并发(若后续 Background 路径从非 dispatcher 线程触发)。
+    private static readonly object _bgLock = new();
+    private static PostMessageSimulator? _bgSim;
+    private static nint _bgSimHwnd = IntPtr.Zero;
+
+    private static PostMessageSimulator GetBgSim(nint hwnd)
+    {
+        lock (_bgLock)
+        {
+            if (_bgSim == null || _bgSimHwnd != hwnd)
+            {
+                _bgSim = Simulation.PostMessage(hwnd);
+                _bgSimHwnd = hwnd;
+            }
+            return _bgSim;
+        }
+    }
+
     /// <summary>
     /// 键盘动作:SendInput 按下指定虚拟键(KeyDown + 持续 50ms + KeyUp)模拟硬件事件走 RIT 投到前台线程。
     /// 对比后台 PostMessage:抢焦点但能跨 ZZZ DX 全屏优化触发 RawInput。
@@ -109,6 +129,65 @@ public static class ZzzTriggerActions
         var absY = screenY * 65535.0 / (screenHeight - 1);
         Simulation.SendInput.Mouse.MoveMouseTo(absX, absY);
         Simulation.SendInput.Mouse.LeftButtonClick();
+    }
+
+    // === Background 路径(走 PostMessage,不抢焦点)===
+    // 与 Foreground 版本区别:跳过 ActivateWindow + 1500ms 切前台等待(避免抢焦点),
+    // 保留时间抖动(300-400ms) + 50ms 按键持续(feedback_zzz_input) + 鼠标位置随机。
+    // 实际是否被 ZZZ 消费待用户实测(dispatcher 注释提示 ZZZ DX 全屏 + RawInput 可能
+    // 不读 WM_KEYDOWN,PostMessage 投递的消息可能不被消费)。
+
+    /// <summary>
+    /// 键盘动作:PostMessage 后台投递 + 50ms 持续 + KeyUp。跳过抢焦点。
+    /// </summary>
+    public static void PressKeyBackground(User32.VK keyCode, ZzzCaptureContent hitContent)
+    {
+        Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
+        var sim = GetBgSim(hitContent.Hwnd);
+        sim.KeyDownBackground(keyCode);
+        Thread.Sleep(50);
+        sim.KeyUpBackground(keyCode);
+    }
+
+    /// <summary>
+    /// 鼠标动作:PostMessage 后台点击命中矩形内随机一点。跳过抢焦点。
+    /// </summary>
+    public static void ClickMatchedAreaBackground(TemplateMatchResult r, ZzzCaptureContent hitContent)
+    {
+        Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
+        var abs = r.AbsRect;
+        var randX = abs.X + _rng.Next(0, Math.Max(1, abs.Width));
+        var randY = abs.Y + _rng.Next(0, Math.Max(1, abs.Height));
+        ClickAtBackground(hitContent, randX, randY);
+    }
+
+    /// <summary>
+    /// 鼠标动作:PostMessage 后台点击给定 capture 坐标矩形内随机一点。跳过抢焦点。
+    /// </summary>
+    public static void ClickRectBackground(ZzzCaptureContent hitContent, CvRect rect)
+    {
+        Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
+        var randX = rect.X + _rng.Next(0, Math.Max(1, rect.Width));
+        var randY = rect.Y + _rng.Next(0, Math.Max(1, rect.Height));
+        ClickAtBackground(hitContent, randX, randY);
+    }
+
+    /// <summary>
+    /// 鼠标动作:PostMessage 后台点击给定 capture 像素坐标。captureX/Y + captureRect
+    /// 转窗口相对坐标(与 Foreground 的屏幕归一化坐标不同)。
+    /// </summary>
+    public static void ClickAtBackground(ZzzCaptureContent hitContent, int captureX, int captureY)
+    {
+        var captureRect = hitContent.CaptureRect;
+        if (captureRect == null)
+        {
+            Debug.WriteLine("[ZZZ] ClickAtBackground: captureRect is null");
+            return;
+        }
+
+        var windowX = captureX + captureRect.Value.Left;
+        var windowY = captureY + captureRect.Value.Top;
+        GetBgSim(hitContent.Hwnd).LeftButtonClickBackground(windowX, windowY);
     }
 
     /// <summary>

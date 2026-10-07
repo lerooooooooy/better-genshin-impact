@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using BetterGenshinImpact.GameTask;
 using BetterGenshinImpact.View.Windows;
 using OpenCvSharp;
 using Vanara.PInvoke;
@@ -241,7 +242,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrActivityFull");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrActivityFull hit → click fixed button rect (daily complete, exiting)");
-                ZzzTriggerActions.ClickRect(content, ActivityFullClickRect);
+                ZzzBackgroundOperation.ClickRect(content, ActivityFullClickRect);
             },
             overlay: _overlay);
         _nodesByLabel[activityFullNode.Label] = activityFullNode;
@@ -255,7 +256,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             operation: (content, _) =>
             {
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrTingmanMaster hit → press F");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_F, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_F, content);
             },
             overlay: _overlay);
         _nodesByLabel[tingmanMasterNode.Label] = tingmanMasterNode;
@@ -297,7 +298,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrHouHou");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrHouHou hit → press F (OcrTingmanMaster failure recovery)");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_F, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_F, content);
             },
             overlay: _overlay);
         _nodesByLabel[houHouNode.Label] = houHouNode;
@@ -320,7 +321,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrAjiu");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrAjiu hit → press F (OcrHouHou failure recovery)");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_F, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_F, content);
             },
             overlay: _overlay);
         _nodesByLabel[ajiuNode.Label] = ajiuNode;
@@ -344,7 +345,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrRwd1");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrRwd1 hit → click fixed button rect");
-                ZzzTriggerActions.ClickRect(content, Rwd1ClickRect);
+                ZzzBackgroundOperation.ClickRect(content, Rwd1ClickRect);
             },
             overlay: _overlay);
         _nodesByLabel[rwd1Node.Label] = rwd1Node;
@@ -381,7 +382,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrYesterdayBill");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrYesterdayBill hit → press ESC (close bill popup)");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
             },
             overlay: _overlay);
         _nodesByLabel[yesterdayBillNode.Label] = yesterdayBillNode;
@@ -404,7 +405,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrReadyToOpen");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrReadyToOpen hit → click fixed button rect");
-                ZzzTriggerActions.ClickRect(content, ReadyToOpenClickRect);
+                ZzzBackgroundOperation.ClickRect(content, ReadyToOpenClickRect);
             },
             overlay: _overlay);
         _nodesByLabel[readyToOpenNode.Label] = readyToOpenNode;
@@ -427,7 +428,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrHonestBusiness");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrHonestBusiness hit → click fixed button rect");
-                ZzzTriggerActions.ClickRect(content, HonestBusinessClickRect);
+                ZzzBackgroundOperation.ClickRect(content, HonestBusinessClickRect);
             },
             overlay: _overlay);
         _nodesByLabel[honestBusinessNode.Label] = honestBusinessNode;
@@ -450,7 +451,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrShengyiXinglong");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrShengyiXinglong hit → press ESC (close flourish popup)");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
             },
             overlay: _overlay);
         _nodesByLabel[shengyiXinglongNode.Label] = shengyiXinglongNode;
@@ -472,13 +473,18 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     content,
                     "OcrKaidianDaji");
                 Debug.WriteLine($"[ZZZ-Workflow-New] common/ocrKaidianDaji hit → press ESC (close grand opening popup)");
-                ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
             },
             overlay: _overlay);
         _nodesByLabel[kaidianDajiNode.Label] = kaidianDajiNode;
 
         // 2) Configure:遍历 map 统一赋 Operation + SuccessTemplate(链装配硬编码 label 目标)
         ConfigureCommonNodes(_nodesByLabel);
+
+        // 注入后台模式开关:从 AllConfig.ZzzRunBackgroundEnabled 读取。
+        // 运行期有效标志 <see cref="ZzzBackgroundOperation.UseBackgroundOperation"/>
+        // 由 <see cref="OnCapture"/> 每帧开头 RefreshOperationMode 刷新。
+        ZzzBackgroundOperation.IsBackgroundRunning = TaskContext.Instance().Config.ZzzRunBackgroundEnabled;
 
         // _current 不在这里设,保持 null —— 首帧 / 链尾终止 / 重试耗尽时由
         // <see cref="FindStartNode"/> 重置到 daliyF2 入口
@@ -537,7 +543,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → press F2");
-                        ZzzTriggerActions.PressKeyForeground(User32.VK.VK_F2, content);
+                        ZzzBackgroundOperation.PressKey(User32.VK.VK_F2, content);
                     };
                     // daliyF2 按 F2 后接 daliyFin 早退检查;daliyFin 的 FailTemplate 接 OcrActivityFull,
                     // OcrActivityFull 的 FailTemplate 再接回 daliyGo(未完成时正常推进)
@@ -564,7 +570,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["OcrTingmanMaster"];
                     break;
@@ -577,7 +583,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["getBattery"];
                     break;
@@ -588,7 +594,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click fixed button rect");
-                        ZzzTriggerActions.ClickRect(content, GetBatteryClickRect);
+                        ZzzBackgroundOperation.ClickRect(content, GetBatteryClickRect);
                     };
                     node.SuccessTemplate = null;  // 链尾:终止
                     break;
@@ -601,7 +607,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["rwd35"];
                     break;
@@ -613,7 +619,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["rwd4"];
                     break;
@@ -625,7 +631,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → press ESC");
-                        ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                        ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
                     };
                     node.SuccessTemplate = nodesByLabel["rwd5"];
                     break;
@@ -634,7 +640,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → press ESC");
-                        ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                        ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
                     };
                     node.SuccessTemplate = nodesByLabel["rwd6"];
                     break;
@@ -643,7 +649,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → press ESC");
-                        ZzzTriggerActions.PressKeyForeground(User32.VK.VK_ESCAPE, content);
+                        ZzzBackgroundOperation.PressKey(User32.VK.VK_ESCAPE, content);
                     };
                     // rwd6 ESC 后回到 daliyF2 主入口:走完整主路径再次尝试;对齐"失败恢复分支闭环"
                     node.SuccessTemplate = nodesByLabel["daliyF2"];
@@ -710,7 +716,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click fixed button rect");
-                        ZzzTriggerActions.ClickRect(content, Shop2ClickRect);
+                        ZzzBackgroundOperation.ClickRect(content, Shop2ClickRect);
                     };
                     node.SuccessTemplate = nodesByLabel["shop3"];
                     break;
@@ -719,7 +725,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     node.Operation = (content, _) =>
                     {
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click fixed button rect");
-                        ZzzTriggerActions.ClickRect(content, Shop3ClickRect);
+                        ZzzBackgroundOperation.ClickRect(content, Shop3ClickRect);
                     };
                     node.SuccessTemplate = nodesByLabel["shop4"];
                     break;
@@ -732,7 +738,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["shop5"];
                     break;
@@ -742,7 +748,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     node.SuccessTemplate = nodesByLabel["shop6"];
                     break;
@@ -752,7 +758,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                     {
                         if (result == null) return;
                         Debug.WriteLine($"[ZZZ-Workflow-New] common/{label} hit → click");
-                        ZzzTriggerActions.ClickMatchedArea(result, content);
+                        ZzzBackgroundOperation.ClickMatchedArea(result, content);
                     };
                     // shop6 点击后接 OcrReadyToOpen(商铺交互完成后进入"准备营业"OCR 检测)
                     node.SuccessTemplate = nodesByLabel["OcrReadyToOpen"];
@@ -847,7 +853,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
                 content,
                 label);
             Debug.WriteLine($"[ZZZ-Workflow-New] common/{label.ToLowerInvariant()} hit → click random in OCR bbox (fallback ROI)");
-            ZzzTriggerActions.ClickRect(content, clickRect);
+            ZzzBackgroundOperation.ClickRect(content, clickRect);
         };
     }
 
@@ -862,6 +868,9 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     public void OnCapture(ZzzCaptureContent content)
     {
+        // 每帧开头刷新后台模式有效标志(前台窗口状态变化 → useBackground 自动切换)
+        ZzzBackgroundOperation.RefreshOperationMode(content.Hwnd);
+
         if (_scanTriggerCount >= MaxScanTriggers)
         {
             // 已达上限且已请求停 dispatcher,等待 dispatcher 完全停止

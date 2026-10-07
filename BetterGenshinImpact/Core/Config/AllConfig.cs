@@ -68,6 +68,14 @@ public partial class AllConfig : ObservableObject
     private bool _zzzNewTriggerEnabled;
 
     /// <summary>
+    /// ZZZ 后台模式:开启后用 PostMessage(不抢焦点)代替默认的 SendInput(抢焦点 + 切前台)。
+    /// 仅 NewZzzTaskTrigger 当前接入此开关;ZZZ 实际是否响应 PostMessage 待用户实测
+    /// (见 ZzzTaskTriggerDispatcher 注释 ZZZ DX 全屏优化 + RawInput 可能不读 WM_KEYDOWN)。
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzRunBackgroundEnabled = true;
+
+    /// <summary>
     /// 绝区零启动路径（ZenlessZoneZero.exe）。留空时启动时会自动从注册表发现。
     /// </summary>
     [ObservableProperty]

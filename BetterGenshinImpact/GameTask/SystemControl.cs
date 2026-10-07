@@ -377,6 +377,21 @@ public class SystemControl
         return User32.IsIconic(TaskContext.Instance().GameHandle);
     }
 
+    /// <summary>
+    /// ZZZ 窗口是否在前台(由调用方传入 ZZZ 的 hWnd;对齐 <see cref="IsGenshinImpactActive"/>
+    /// 的语义,后者走 TaskContext.GameHandle,这里因为 ZZZ 走独立的 dispatcher + capture,
+    /// hWnd 通过 ZzzCaptureContent.Hwnd 拿)。
+    /// </summary>
+    public static bool IsZzzActive(nint zzzHwnd)
+    {
+        if (zzzHwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        return User32.GetForegroundWindow() == zzzHwnd;
+    }
+
     public static nint GetForegroundWindowHandle()
     {
         return (nint)User32.GetForegroundWindow();

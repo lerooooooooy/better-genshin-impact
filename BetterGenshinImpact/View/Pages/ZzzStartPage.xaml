@@ -217,6 +217,84 @@
                                Command="{Binding CaptureCurrentImageCommand}"
                                Content="获取当前图像" />
                 </Grid>
+                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="测试目标窗口"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="点按钮调 PickerWindow 任意选窗口;不选时默认 FindZzzHandle(ZZZ)"
+                                  TextWrapping="Wrap" />
+                    <StackPanel Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Grid.Column="1"
+                                Margin="0,0,36,0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <ui:TextBlock VerticalAlignment="Center"
+                                      Margin="0,0,12,0"
+                                      MaxWidth="280"
+                                      TextTrimming="CharacterEllipsis"
+                                      Text="{Binding SelectedTestWindowDisplay, Mode=OneWay}" />
+                        <ui:Button VerticalAlignment="Center"
+                                   Command="{Binding SelectTestWindowCommand}"
+                                   Content="选择窗口" />
+                    </StackPanel>
+                </Grid>
+                <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="测试发送按键(input 模块)"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="前台 SendInput / 后台 PostMessage 二选一,先等 2s 再按选定键(F2/ESC/F/Space)"
+                                  TextWrapping="Wrap" />
+                    <StackPanel Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Grid.Column="1"
+                                Margin="0,0,36,0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <ui:TextBlock VerticalAlignment="Center"
+                                      Margin="0,0,4,0"
+                                      Text="后台" />
+                        <ui:ToggleSwitch VerticalAlignment="Center"
+                                         Margin="0,0,12,0"
+                                         IsChecked="{Binding UseBackgroundForTest, Mode=TwoWay}" />
+                        <ComboBox VerticalAlignment="Center"
+                                  MinWidth="90"
+                                  Margin="0,0,12,0"
+                                  ItemsSource="{Binding TestKeyOptions, Mode=OneWay}"
+                                  SelectedValue="{Binding SelectedTestKey, Mode=TwoWay}" />
+                        <ui:Button VerticalAlignment="Center"
+                                   Command="{Binding TestSendKeyCommand}"
+                                   Content="发送" />
+                    </StackPanel>
+                </Grid>
             </StackPanel>
         </ui:CardExpander>
         <ui:CardExpander Margin="0,12,0,12"

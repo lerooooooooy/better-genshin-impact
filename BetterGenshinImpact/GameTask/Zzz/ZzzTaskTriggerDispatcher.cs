@@ -8,6 +8,7 @@ using System.Windows;
 using System.Drawing;
 using DrawingPoint = System.Drawing.Point;
 using DrawingRectangle = System.Drawing.Rectangle;
+using BetterGenshinImpact.Core.Simulator;
 using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.View.Windows;
 using Fischless.GameCapture;
@@ -136,7 +137,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         return new TestZzzTaskTrigger(
             captureProvider: BuildCaptureProvider(),
             overlay: _overlay,
-            postMessageSimulator: TaskContext.Instance().PostMessageSimulator);
+            postMessageSimulator: Simulation.PostMessage(_hWnd));
     }
 
     private CommonZzzTaskTrigger CreateCommonTrigger()
