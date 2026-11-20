@@ -28,9 +28,11 @@ using BetterGenshinImpact.View.Windows;
 using BetterGenshinImpact.ViewModel.Pages.View;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -53,6 +55,7 @@ public partial class TaskSettingsPageViewModel : ViewModel
 
     private readonly INavigationService _navigationService;
     private readonly TaskTriggerDispatcher _taskDispatcher;
+    private readonly ILogger<TaskSettingsPageViewModel> _logger = App.GetLogger<TaskSettingsPageViewModel>();
 
     private CancellationTokenSource? _cts;
     private static readonly object _locker = new();
@@ -147,6 +150,19 @@ public partial class TaskSettingsPageViewModel : ViewModel
     private bool _autoComboRunRunning;
 
     private bool _autoComboRunPaused;
+
+    /// <summary>“拉取模型列表”得到的候选模型名；不写入配置，重启后需要重新拉取</summary>
+    [ObservableProperty]
+    private ObservableCollection<string> _autoComboModelNameList = [];
+
+    /// <summary>正在拉取模型列表，用于禁用按钮避免重复请求</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(FetchAutoComboModelListCommand))]
+    private bool _fetchingAutoComboModelList;
+
+    /// <summary>当前“自动连招”服务商为发鱼站：地址与提示词类配置由网关接管，设置页不再展示</summary>
+    [ObservableProperty]
+    private bool _isAutoComboFishRelief;
 
     [ObservableProperty]
     private List<string> _domainNameList;
@@ -269,9 +285,25 @@ public partial class TaskSettingsPageViewModel : ViewModel
 
         //_combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
 
-        _domainNameList = ["", AutoDomainTask.DevelopmentGuideOption, .. MapLazyAssets.Get().DomainNameList];
+        _domainNameList = ["", AutoDomainTask.TrainingGuideOption, .. MapLazyAssets.Get().DomainNameList];
         _autoFightViewModel = new AutoFightViewModel(Config);
         _oneDragonFlowViewModel = new OneDragonFlowViewModel();
+        Config.AutoComboBuildConfig.PropertyChanged += OnAutoComboBuildConfigPropertyChanged;
+        UpdateAutoComboFishRelief();
+    }
+
+    private void OnAutoComboBuildConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AutoComboBuildConfig.Provider))
+        {
+            UpdateAutoComboFishRelief();
+        }
+    }
+
+    /// <summary>服务商切换后刷新可见性状态：发鱼站下服务地址与提示词类配置不再适用</summary>
+    private void UpdateAutoComboFishRelief()
+    {
+        IsAutoComboFishRelief = AutoComboLlmProvider.Normalize(Config.AutoComboBuildConfig.Provider) == AutoComboLlmProvider.FishRelief;
     }
 
     partial void OnScanDropsAfterRewardEnabledUiChanged(bool value)
@@ -493,9 +525,11 @@ public partial class TaskSettingsPageViewModel : ViewModel
         }
 
         SwitchAutoDomainEnabled = true;
-        await new TaskRunner()
-            .RunSoloTaskAsync(new AutoDomainTask(new AutoDomainParam(AutoDomainRoundNum, path)));
-        SwitchAutoDomainEnabled = false;
+        try
+        {
+            await new TaskRunner().RunSoloTaskAsync(new AutoDomainTask(new AutoDomainParam(AutoDomainRoundNum, path)));
+        }
+        finally { SwitchAutoDomainEnabled = false; }
     }
 
     public bool GetFightStrategy(out string path)
@@ -754,6 +788,53 @@ public partial class TaskSettingsPageViewModel : ViewModel
             {
                 SwitchAutoComboRunButtonText = "测试运行";
             }
+        }
+    }
+
+    /// <summary>拉取期间禁用按钮，避免重复请求。</summary>
+    private bool CanFetchAutoComboModelList() => !FetchingAutoComboModelList;
+
+    /// <summary>
+    /// 拉取当前服务商的模型列表填充下拉。除候选列表外，命中时只把服务地址回写为规范形式，其余配置不动。
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanFetchAutoComboModelList))]
+    private async Task OnFetchAutoComboModelList()
+    {
+        FetchingAutoComboModelList = true;
+        var config = Config.AutoComboBuildConfig;
+        try
+        {
+            var (models, correctedEndpoint) = await AutoComboModelListFetcher.FetchAsync(config.Provider, config.PlanningLlmEndpoint, config.ApiKey, CancellationToken.None);
+
+            // 失败时不清空既有候选列表与用户已选模型；只有成功才替换
+            AutoComboModelNameList = new ObservableCollection<string>(models);
+
+            // 命中后把服务地址回写为规范形式（去掉 /models）：用户填纯域名或带 /v1 时都能被纠正
+            if (!string.IsNullOrWhiteSpace(correctedEndpoint) && config.PlanningLlmEndpoint != correctedEndpoint)
+            {
+                config.PlanningLlmEndpoint = correctedEndpoint;
+            }
+
+            // 尚未选择模型时用列表首项补位，避免空模型名直接建树失败；已有选择保持不动（拉取只提供候选项，不覆盖用户选择）
+            var autoSelected = string.IsNullOrWhiteSpace(config.ModelName);
+            if (autoSelected)
+            {
+                config.ModelName = models[0];
+            }
+
+            UIDispatcherHelper.Invoke(() => Toast.Success(autoSelected
+                ? $"已拉取 {models.Count} 个模型，已自动选择 {models[0]}"
+                : $"已拉取 {models.Count} 个模型，可在“LLM模型名”下拉选择"));
+        }
+        catch (Exception e)
+        {
+            // 失败详情写日志：Toast 是一次性的，不能作为排查依据
+            _logger.LogError(e, "拉取自动连招模型列表失败（服务商：{Provider}）", config.Provider);
+            UIDispatcherHelper.Invoke(() => Toast.Error($"拉取模型列表失败：{e.Message}"));
+        }
+        finally
+        {
+            FetchingAutoComboModelList = false;
         }
     }
 

@@ -234,24 +234,15 @@
                                   Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
                                   Text="{i18n:T 修改后需要重启程序生效}"
                                   TextWrapping="Wrap" />
-                    <ComboBox Grid.Row="0"
-                              Grid.RowSpan="2"
-                              Grid.Column="1"
-                              Margin="0,0,10,0"
-                              ItemsSource="{Binding InferenceDeviceTypes}"
-                              SelectedItem="{Binding Config.HardwareAccelerationConfig.InferenceDevice, Mode=TwoWay}">
-                        <!-- <b:Interaction.Triggers> -->
-                        <!--     <b:EventTrigger EventName="SelectionChanged"> -->
-                        <!--         <b:InvokeCommandAction Command="{Binding InferenceDeviceTypeDropDownChangedCommand}" CommandParameter="{Binding Config.InferenceDevice}" /> -->
-                        <!--     </b:EventTrigger> -->
-                        <!-- </b:Interaction.Triggers> -->
-                    </ComboBox>
+                    <TextBlock Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Margin="0,0,10,0"
+                               VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="340"
+                               Text="{Binding InferenceRuntimeStatusText}" />
                     <ui:Button Grid.Row="0"
                                Grid.RowSpan="2"
                                Grid.Column="2"
                                Margin="0,0,36,0"
                                Command="{Binding OpenHardwareAccelerationSettingsCommand}"
-                               Content="{i18n:T 更多...}" />
+                               Content="{i18n:T 设置}" />
                 </Grid>
                 <Separator Margin="-18,0" BorderThickness="0,1,0,0" />
                 <Grid Margin="16">
@@ -600,7 +591,7 @@
                        Icon="{ui:SymbolIcon Open24}" />
         </ui:CardControl>
 
-        <!--  云原神网页版：每个实例是一个独立的 BetterGI 进程，按实例名保存 WebView 数据（仅 Primary 显示）  -->
+        <!--  云原神网页版：每个实例是一个独立的 BetterGI 进程，按实例名保存 WebView 数据（仅 Debug 构建且已附加调试器的 Primary 显示）  -->
         <ui:CardControl Margin="0,0,0,12"
                         Icon="{ui:SymbolIcon Globe24}"
                         Visibility="{Binding IsCloudWebEntryVisible, Converter={StaticResource BooleanToVisibilityConverter}}">

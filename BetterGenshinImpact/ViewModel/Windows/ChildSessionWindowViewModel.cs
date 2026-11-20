@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
@@ -12,8 +13,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Wpf.Ui.Controls;
-using MessageBoxButton = System.Windows.MessageBoxButton;
-using MessageBoxResult = System.Windows.MessageBoxResult;
 
 namespace BetterGenshinImpact.ViewModel.Windows;
 
@@ -26,6 +25,10 @@ public partial class ChildSessionWindowViewModel : ViewModel
     private readonly ChildSessionService _childSessionService;
     private readonly DispatcherTimer _notificationTimer;
     private bool _startRequested;
+    private ChildSessionDiagnosticsWindow? _diagnosticsWindow;
+
+    [ObservableProperty]
+    private bool _isDiagnosticsSuggested;
 
     [ObservableProperty]
     private Brush _connectionStatusBrush = Brushes.Red;
@@ -91,6 +94,11 @@ public partial class ChildSessionWindowViewModel : ViewModel
     private bool _isGameMouseModeEnabled;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WatchModeMenuHeader))]
+    [NotifyPropertyChangedFor(nameof(WatchModeMenuToolTip))]
+    private bool _isWatchModeEnabled;
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(AudioButtonToolTip))]
     private bool _isAudioMuted;
 
@@ -134,6 +142,12 @@ public partial class ChildSessionWindowViewModel : ViewModel
     public string WindowSizeModeMenuToolTip => IsSmallWindowMode
         ? "将桌面分身窗口还原至默认大小"
         : "将桌面分身窗口缩放至宽 750，并按 16:9 比例同步缩小高度";
+
+    public string WatchModeMenuHeader => IsWatchModeEnabled ? "控制模式" : "观看模式";
+
+    public string WatchModeMenuToolTip => IsWatchModeEnabled
+        ? "退出观看模式"
+        : "桌面分身画面仅可观看，键鼠不会生效";
 
     public double WindowResizeTargetWidth => IsSmallWindowMode
         ? SmallWindowWidth
@@ -210,32 +224,22 @@ public partial class ChildSessionWindowViewModel : ViewModel
         OnPropertyChanged(nameof(TopmostButtonToolTip));
     }
 
+    /// <summary>
+    /// 启动桌面分身的命令入口。直接尝试连接，失败后提供诊断按钮，
+    /// 由用户主动打开诊断面板检查环境。
+    /// </summary>
     [RelayCommand]
     private async Task StartAsync()
     {
-        if (_childSessionService.ConnectedState != 1
-            && _childSessionService.IsRdpWrapperEnabled())
-        {
-            var result = await ThemedMessageBox.WarningAsync(
-                "检测到系统已安装并启用 RDP Wrapper。\n\n"
-                + "RDP Wrapper 提供了更强大的远程多用户支持，但与当前的桌面分身功能不兼容，"
-                + "可能导致桌面分身无法正常启动。\n\n是否仍要继续？",
-                "RDP Wrapper 兼容性提醒",
-                MessageBoxButton.YesNo,
-                MessageBoxResult.No);
-            if (result != MessageBoxResult.Yes)
-            {
-                return;
-            }
-        }
-
+        // 环境条件只在用户主动诊断时检查，避免挡住本来可以连上的用户。
+        IsDiagnosticsSuggested = false;
         _startRequested = true;
         IsConnectionPromptVisible = false;
 
         try
         {
             await Dispatcher.Yield(DispatcherPriority.Background);
-            await ExecuteAsync(_childSessionService.StartAsync);
+            await ExecuteAsync(_childSessionService.StartAsync, suggestDiagnosticsOnError: true);
         }
         finally
         {
@@ -369,6 +373,25 @@ public partial class ChildSessionWindowViewModel : ViewModel
             enabled ? InfoBarSeverity.Informational : InfoBarSeverity.Success);
     }
 
+    [RelayCommand]
+    private void ToggleWatchMode()
+    {
+        var enabled = !IsWatchModeEnabled;
+        if (!Execute(() => _childSessionService.SetWatchModeEnabled(enabled)))
+        {
+            IsWatchModeEnabled = _childSessionService.WatchModeEnabled;
+            return;
+        }
+
+        IsWatchModeEnabled = _childSessionService.WatchModeEnabled;
+        ShowNotification(
+            enabled ? "观看模式已开启" : "观看模式已关闭",
+            enabled
+                ? "本机键鼠不会对分身生效，但控制中心的组合键仍然生效。"
+                : "本机键鼠恢复操作桌面分身。",
+            enabled ? InfoBarSeverity.Informational : InfoBarSeverity.Success);
+    }
+
     [RelayCommand(CanExecute = nameof(CanToggleAudioMuted))]
     private void ToggleAudioMuted()
     {
@@ -460,7 +483,7 @@ public partial class ChildSessionWindowViewModel : ViewModel
         });
     }
 
-    private async Task ExecuteAsync(Func<Task> action)
+    private async Task ExecuteAsync(Func<Task> action, bool suggestDiagnosticsOnError = false)
     {
         try
         {
@@ -468,6 +491,13 @@ public partial class ChildSessionWindowViewModel : ViewModel
         }
         catch (Exception exception)
         {
+            // 启动直接抛异常（例如系统缺少 Child Session API）时也要提供诊断入口：
+            // 用户点击后再检查环境，帮助定位具体缺少的条件。
+            if (suggestDiagnosticsOnError)
+            {
+                SuggestDiagnosticsOnFailure();
+            }
+
             ShowError(exception);
         }
         finally
@@ -505,6 +535,49 @@ public partial class ChildSessionWindowViewModel : ViewModel
         _ = Application.Current.Dispatcher.BeginInvoke(UpdateConnectionStatus);
     }
 
+    /// <summary>
+    /// 打开诊断与修复面板。已经打开时把它叫到前面，不重复创建。
+    /// </summary>
+    [RelayCommand]
+    private void OpenDiagnostics()
+    {
+        if (_diagnosticsWindow is { IsLoaded: true } existing)
+        {
+            // 最小化时 Activate() 不会把窗口还原，用户点菜单会以为没反应。
+            if (existing.WindowState == WindowState.Minimized)
+            {
+                existing.WindowState = WindowState.Normal;
+            }
+
+            existing.Activate();
+            return;
+        }
+
+        var window = App.GetService<ChildSessionDiagnosticsWindow>();
+        if (window is null)
+        {
+            return;
+        }
+
+        // 面板属于桌面分身窗口，挂上去后跟随它一起关闭。
+        window.Owner = Application.Current.Windows.OfType<ChildSessionWindow>().FirstOrDefault()
+                       ?? Application.Current.MainWindow;
+        window.Closed += (_, _) => _diagnosticsWindow = null;
+        _diagnosticsWindow = window;
+        window.Show();
+    }
+
+    /// <summary>
+    /// 启动失败时显示诊断入口，由用户点击后打开面板。
+    ///
+    /// 失败会被重试流程触发多次，这里只更新按钮的可见状态，
+    /// 用户也可以通过菜单打开，不会反复抢焦点。
+    /// </summary>
+    private void SuggestDiagnosticsOnFailure()
+    {
+        IsDiagnosticsSuggested = true;
+    }
+
     private void OnChildSessionConnectionFailed(
         object? sender,
         ChildSessionConnectionFailedEventArgs e)
@@ -521,6 +594,10 @@ public partial class ChildSessionWindowViewModel : ViewModel
                     e.Message,
                     InfoBarSeverity.Error,
                     TimeSpan.FromSeconds(10));
+
+                // 失败原因往往在环境里（服务被禁用、被补丁接管等），
+                // 提供诊断按钮，让用户主动检查，无需自己翻日志。
+                SuggestDiagnosticsOnFailure();
             }));
     }
 
@@ -590,6 +667,7 @@ public partial class ChildSessionWindowViewModel : ViewModel
         KeepAspectRatio = _childSessionService.KeepAspectRatio;
         SendSystemShortcutsToRemote = _childSessionService.SendSystemShortcutsToRemote;
         IsGameMouseModeEnabled = _childSessionService.IsGameMouseModeEnabled;
+        IsWatchModeEnabled = _childSessionService.WatchModeEnabled;
         IsAudioMuted = _childSessionService.AudioMuted;
         IsRdpConnected = connectedState == 1;
         IsConnectionPromptVisible = IsSessionClosing || connectedState == 0 && !_startRequested;
@@ -610,6 +688,7 @@ public partial class ChildSessionWindowViewModel : ViewModel
 
         if (IsRdpConnected)
         {
+            IsDiagnosticsSuggested = false;
             ConnectionStatusBrush = Brushes.LimeGreen;
             ConnectionStatusTitle = "桌面分身已连接";
             ConnectionStatusDescription = "RDP 连接正常，可以直接在桌面分身中操作。";
