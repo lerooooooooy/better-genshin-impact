@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -121,8 +122,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     // 连通域上限 2:»» 通常 1 个 blob(动画极端相位 ≤ 2);UI 多 blob 装饰结构 3~8
     private const int ContinueArrowMaxLabels = 2;
 
-    private readonly ZzzOverlayWindow? _overlay;
-    private readonly Func<ZzzCaptureContent?> _captureProvider;
+    private readonly TriggerOverlayWindow? _overlay;
+    private readonly Func<TriggerCaptureContent?> _captureProvider;
     private readonly PostMessageSimulator? _postMessageSimulator;
 
     private int _sequence;
@@ -165,24 +166,24 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     // DailySel/DailyNoSel 不进 — 它们是 RunSeqDailySel 内的副模板,不做序列跳转。
     // ContinueArrow HSV 进 — 让 seq 4 可以从兜底扫描进入(不只依赖 seq 3 → 4 自然推进)。
     // 必须是 instance 字段:C# 不允许 field initializer 引用 instance 字段(CS0236)。
-    private readonly (IZzzWaitTarget target, int seq)[] _scanTargets;
+    private readonly (IWaitTarget target, int seq)[] _scanTargets;
 
     public TestZzzTaskTrigger(
-        Func<ZzzCaptureContent?> captureProvider,
-        ZzzOverlayWindow? overlay = null,
+        Func<TriggerCaptureContent?> captureProvider,
+        TriggerOverlayWindow? overlay = null,
         PostMessageSimulator? postMessageSimulator = null)
     {
         _overlay = overlay;
         _captureProvider = captureProvider;
         _postMessageSimulator = postMessageSimulator;
 
-        _scanTargets = new (IZzzWaitTarget target, int seq)[]
+        _scanTargets = new (IWaitTarget target, int seq)[]
         {
             (_f2Target, 0),
             (_daliyUiTarget, 1),
             (_daliyGoTarget, 2),
             (new HsvWaitTarget("ContinueArrow",
-                c => ZzzImageUtils.DetectArrowBlob(
+                c => ImageUtils.DetectArrowBlob(
                     c.Image, ContinueArrowRoi,
                     ContinueArrowSMax, ContinueArrowVMin,
                     ContinueArrowMinArea, ContinueArrowMaxArea,
@@ -209,7 +210,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         };
     }
 
-    public void OnCapture(ZzzCaptureContent content)
+    public void OnCapture(TriggerCaptureContent content)
     {
         try
         {
@@ -345,7 +346,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// <summary> seq 0: 等 F2 模板命中 → 按 F2 键(按 UseForegroundF2 切换前后台) </summary>
     private bool RunSeqF2()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _f2Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _f2Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq0/F2";
@@ -370,7 +371,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqDailySel()
     {
-        var (uiLabel, uiResult, hitContent) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _daliyUiTarget);
+        var (uiLabel, uiResult, hitContent) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _daliyUiTarget);
         if (uiResult == null || hitContent == null)
         {
             _lastSeqLabel = uiLabel ?? "seq1/DaliyUi";
@@ -395,7 +396,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         // - daliyFin 命中 → 日常已完成(已领取),整个 trigger 退出
         // - daliyReach 命中 → 日常已完成但未领取,点击 (1469,257,163x79) 领取后继续 seq 2
         // - 都没命中 → 继续 seq 2
-        ZzzCaptureContent? checkContent;
+        TriggerCaptureContent? checkContent;
         try
         {
             checkContent = _captureProvider();
@@ -445,7 +446,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// <summary> seq 2: 等 daliyGo 模板命中 → 区域内随机点点击 → 推进 seq 3 </summary>
     private bool RunSeqDailyGo()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _daliyGoTarget);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _daliyGoTarget);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq2/DaliyGo";
@@ -466,7 +467,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqF()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _f2Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _f2Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq3/F";
@@ -488,8 +489,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqContinueArrow()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: new HsvWaitTarget("ContinueArrow",
-            c => ZzzImageUtils.DetectArrowBlob(
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: new HsvWaitTarget("ContinueArrow",
+            c => ImageUtils.DetectArrowBlob(
                 c.Image, ContinueArrowRoi,
                 ContinueArrowSMax, ContinueArrowVMin,
                 ContinueArrowMinArea, ContinueArrowMaxArea,
@@ -506,8 +507,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         }
         _lastSeqLabel = null;
 
-        var safeRoi = ZzzImageUtils.ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
-        ZzzTaskTriggerDispatcher.DrawMatchRect(
+        var safeRoi = ImageUtils.ClampRoi(ContinueArrowRoi, content.Image.Width, content.Image.Height);
+        TriggerOverlayWindow.DrawMatchRect(
             _overlay,
             new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content,
@@ -536,7 +537,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqDialogOpt1()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _dialogOpt1Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _dialogOpt1Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq5/DialogOpt1";
@@ -556,7 +557,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd6()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd6Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd6Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq6/Rwd6";
@@ -576,7 +577,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd1()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd1Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd1Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq7/Rwd1";
@@ -596,7 +597,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqGetBattery()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _getBatteryTarget);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _getBatteryTarget);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq8/GetBattery";
@@ -616,7 +617,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRin()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rinTarget);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rinTarget);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq9/Rin";
@@ -636,7 +637,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd3()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd3Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd3Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq10/Rwd3";
@@ -656,7 +657,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd4()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd4Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd4Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq11/Rwd4";
@@ -676,7 +677,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd5()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd5Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd5Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq12/Rwd5";
@@ -696,7 +697,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqRwd7()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd7Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _rwd7Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq13/Rwd7";
@@ -716,7 +717,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqShop2()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop2Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop2Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq14/Shop2";
@@ -736,7 +737,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqShop3()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop3Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop3Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq15/Shop3";
@@ -756,7 +757,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqShop4()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop4Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop4Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq16/Shop4";
@@ -776,7 +777,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqShop5()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop5Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop5Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq17/Shop5";
@@ -796,7 +797,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqShop6()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop6Target);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _shop6Target);
         if (result == null || content == null)
         {
             _lastSeqLabel = label ?? "seq18/Shop6";
@@ -818,7 +819,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqReadyToOpen()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _readyToOpenTarget);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _readyToOpenTarget);
         if (content == null)
         {
             _lastSeqLabel = label ?? "seq19/ReadyToOpen";
@@ -827,8 +828,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         }
         _lastSeqLabel = null;
 
-        var safeRoi = ZzzImageUtils.ClampRoi(ReadyToOpenRoi, content.Image.Width, content.Image.Height);
-        ZzzTaskTriggerDispatcher.DrawMatchRect(
+        var safeRoi = ImageUtils.ClampRoi(ReadyToOpenRoi, content.Image.Width, content.Image.Height);
+        TriggerOverlayWindow.DrawMatchRect(
             _overlay,
             new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content,
@@ -846,7 +847,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// </summary>
     private bool RunSeqHonestBusiness()
     {
-        var (label, result, content) = ZzzWaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _honestBusinessTarget);
+        var (label, result, content) = WaitForHit.Run(totalTimeoutMs: 3000, intervalMs: 1500, captureProvider: _captureProvider, targets: _honestBusinessTarget);
         if (content == null)
         {
             _lastSeqLabel = label ?? "seq20/HonestBusiness";
@@ -855,8 +856,8 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         }
         _lastSeqLabel = null;
 
-        var safeRoi = ZzzImageUtils.ClampRoi(HonestBusinessRoi, content.Image.Width, content.Image.Height);
-        ZzzTaskTriggerDispatcher.DrawMatchRect(
+        var safeRoi = ImageUtils.ClampRoi(HonestBusinessRoi, content.Image.Width, content.Image.Height);
+        TriggerOverlayWindow.DrawMatchRect(
             _overlay,
             new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content,
@@ -873,7 +874,7 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// 优点:不抢焦点。缺点:ZZZ 当前若不在前台,user32 队列消息被丢。
     /// 走 PostMessageSimulatorExtension(KeyId 重载):不走 GIActions→KeyBindingsConfig 链路。
     /// </summary>
-    private void PressF2Key(TemplateMatchResult r, ZzzCaptureContent hitContent)
+    private void PressF2Key(TemplateMatchResult r, TriggerCaptureContent hitContent)
     {
         Thread.Sleep(ZzzTriggerActions.ActionDelayMinMs);
         _postMessageSimulator?.KeyDown(User32.VK.VK_M);
@@ -906,11 +907,11 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     ///
     /// 同步阻塞:单次 capture + N 次 TryMatch,不轮询、不 sleep,通常 < 50ms 完成。
     /// </summary>
-    private (string? matchedLabel, ZzzCaptureContent? content) ScanAllMainTemplates()
+    private (string? matchedLabel, TriggerCaptureContent? content) ScanAllMainTemplates()
     {
         Debug.WriteLine($"[ZZZ-Test] scan recovery: starting single-frame scan, targets=[{string.Join(",", System.Linq.Enumerable.Select(_scanTargets, t => t.target.Label))}]");
 
-        ZzzCaptureContent? content;
+        TriggerCaptureContent? content;
         try
         {
             content = _captureProvider();
@@ -941,10 +942,10 @@ public sealed class TestZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             }
             if (hit)
             {
-                Debug.WriteLine($"[ZZZ-Test] scan recovery: HIT type={(result != null ? "template" : "hsv")} label={target.Label}{ZzzWaitForHit.FormatMatchDetail(result, target.Threshold)}");
+                Debug.WriteLine($"[ZZZ-Test] scan recovery: HIT type={(result != null ? "template" : "hsv")} label={target.Label}{WaitForHit.FormatMatchDetail(result, target.Threshold)}");
                 return (target.Label, content);
             }
-            Debug.WriteLine($"[ZZZ-Test] scan recovery: check label={target.Label} miss{ZzzWaitForHit.FormatMatchDetail(result, target.Threshold)}");
+            Debug.WriteLine($"[ZZZ-Test] scan recovery: check label={target.Label} miss{WaitForHit.FormatMatchDetail(result, target.Threshold)}");
         }
 
         Debug.WriteLine($"[ZZZ-Test] scan recovery: nothing matched ({_scanTargets.Length} targets checked)");

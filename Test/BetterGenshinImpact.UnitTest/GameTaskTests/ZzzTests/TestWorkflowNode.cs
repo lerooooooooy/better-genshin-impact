@@ -1,5 +1,5 @@
 using System;
-using BetterGenshinImpact.GameTask.Zzz;
+using BetterGenshinImpact.GameTask.Trigger;
 using BetterGenshinImpact.View.Windows;
 
 namespace BetterGenshinImpact.UnitTest.GameTaskTests.ZzzTests;
@@ -20,7 +20,7 @@ internal sealed class TestWorkflowNode : WorkflowNodeBase
         bool tryMatchResult,
         TemplateMatchResult? tryMatchOut = null,
         bool operationThrows = false,
-        ZzzOverlayWindow? overlay = null)
+        TriggerOverlayWindow? overlay = null)
         : base(overlay)
     {
         Label = label;
@@ -45,11 +45,11 @@ internal sealed class TestWorkflowNode : WorkflowNodeBase
     public override int MaxRetries { get; internal set; }
     public override IWorkflowNode? SuccessTemplate { get; internal set; }
     public override IWorkflowNode? FailTemplate { get; internal set; }
-    public override Action<ZzzCaptureContent, TemplateMatchResult?> Operation { get; internal set; }
+    public override Action<TriggerCaptureContent, TemplateMatchResult?> Operation { get; internal set; }
 
     public int OperationCallCount { get; private set; }
 
-    public override bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? result)
+    public override bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? result)
     {
         result = _tryMatchOut;
         return _tryMatchResult;

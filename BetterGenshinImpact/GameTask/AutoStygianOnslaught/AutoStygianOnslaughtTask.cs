@@ -8,6 +8,9 @@ using BetterGenshinImpact.GameTask.AutoDomain;
 using BetterGenshinImpact.GameTask.AutoDomain.Model;
 using BetterGenshinImpact.GameTask.AutoFight;
 using BetterGenshinImpact.GameTask.AutoFight.Assets;
+using BetterGenshinImpact.Service.Notification;
+using BetterGenshinImpact.Service.Notification.Model.Enum;
+using Microsoft.Extensions.Logging;
 using BetterGenshinImpact.GameTask.AutoFight.Model;
 using BetterGenshinImpact.GameTask.AutoFight.Script;
 using BetterGenshinImpact.GameTask.AutoGeniusInvokation.Exception;
@@ -21,9 +24,6 @@ using BetterGenshinImpact.GameTask.Common.StateMachine;
 using BetterGenshinImpact.GameTask.Model.Area;
 using BetterGenshinImpact.GameTask.QuickTeleport.Assets;
 using BetterGenshinImpact.Helpers.Extensions;
-using BetterGenshinImpact.Service.Notification;
-using BetterGenshinImpact.Service.Notification.Model.Enum;
-using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
@@ -654,6 +654,12 @@ public class AutoStygianOnslaughtTask : StateMachineBase<StygianState, BvPage>, 
             var combatCommands = await PrepareForBattleLoop(combatScenes);
 
             Logger.LogInformation($"{Name}：执行战斗策略");
+            // 复用 AutoDomainConfig 的替换表(同一份全局设置):TXT 模式 string 键路径会查替换表,JSON 模式走 GIActions 自然豁免。
+            // using var 保证战斗结束或中途异常时撤销,不影响下一轮。
+            var keySubConfig = TaskContext.Instance().Config.AutoDomainConfig;
+            using var keyLease = keySubConfig.EnableCombatKeySubstitution && keySubConfig.CombatKeyMap.Count > 0
+                ? CombatKeySubstitution.Install(keySubConfig.CombatKeyMap)
+                : null;
             await StartFight(combatScenes, combatCommands);
         }
     }

@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using BetterGenshinImpact.GameTask;
 using OpenCvSharp;
@@ -45,7 +46,7 @@ public static class ZzzBackgroundOperation
     }
 
     /// <summary>键盘:按 <see cref="UseBackgroundOperation"/> 选 Foreground / Background。</summary>
-    public static void PressKey(User32.VK keyCode, ZzzCaptureContent content)
+    public static void PressKey(User32.VK keyCode, TriggerCaptureContent content)
     {
         if (UseBackgroundOperation)
         {
@@ -58,7 +59,7 @@ public static class ZzzBackgroundOperation
     }
 
     /// <summary>鼠标:点给定 capture 矩形 (随机一点)。按 flag 选 Foreground / Background。</summary>
-    public static void ClickRect(ZzzCaptureContent content, CvRect rect)
+    public static void ClickRect(TriggerCaptureContent content, CvRect rect)
     {
         if (UseBackgroundOperation)
         {
@@ -71,7 +72,7 @@ public static class ZzzBackgroundOperation
     }
 
     /// <summary>鼠标:点给定 capture 像素坐标。按 flag 选。</summary>
-    public static void ClickAt(ZzzCaptureContent content, int x, int y)
+    public static void ClickAt(TriggerCaptureContent content, int x, int y)
     {
         if (UseBackgroundOperation)
         {
@@ -84,7 +85,7 @@ public static class ZzzBackgroundOperation
     }
 
     /// <summary>鼠标:点模板匹配框内随机一点。按 flag 选 Foreground / Background。</summary>
-    public static void ClickMatchedArea(TemplateMatchResult result, ZzzCaptureContent content)
+    public static void ClickMatchedArea(TemplateMatchResult result, TriggerCaptureContent content)
     {
         if (UseBackgroundOperation)
         {

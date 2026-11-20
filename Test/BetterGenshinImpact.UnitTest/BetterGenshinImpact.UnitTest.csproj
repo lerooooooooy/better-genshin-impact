@@ -31,4 +31,9 @@
       <Folder Include="Assets\AutoFight\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <None Update="Assets\WuWa\*.png" CopyToOutputDirectory="PreserveNewest" />
+      <None Update="GameTaskTests\WuWaTests\Resources\*.png" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

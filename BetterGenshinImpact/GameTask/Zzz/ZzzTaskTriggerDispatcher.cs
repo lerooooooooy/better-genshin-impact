@@ -1,4 +1,5 @@
-﻿using System;
+using BetterGenshinImpact.GameTask.Trigger;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -28,7 +29,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
 
     private IGameCapture? _capture;
     private List<IZzzTaskTrigger> _triggers = new();
-    private ZzzOverlayWindow? _overlay;
+    private TriggerOverlayWindow? _overlay;
     private nint _hWnd;
     private int _frameIndex;
 
@@ -51,7 +52,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         ProbeIntegrityLevel();
     }
 
-    public void Start(nint hWnd, CaptureModes mode, bool runTestTrigger = false, bool runCommonTrigger = false, bool runNewTrigger = false)
+    public void Start(nint hWnd, CaptureModes mode, bool runTestTrigger = false, bool runCommonTrigger = false, bool runNewTrigger = false, bool runBallPauseActivityTrigger = false)
     {
         Stop(); // 兜底
 
@@ -92,6 +93,10 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         if (runNewTrigger)
         {
             triggers.Add(CreateNewTrigger());
+        }
+        if (runBallPauseActivityTrigger)
+        {
+            triggers.Add(CreateBallPauseActivityTrigger());
         }
 
         _triggers = triggers;
@@ -152,13 +157,18 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         return new NewZzzTaskTrigger(overlay: _overlay, requestDispatcherStop: Stop);
     }
 
+    private BallPauseActivityTrigger CreateBallPauseActivityTrigger()
+    {
+        return new BallPauseActivityTrigger();
+    }
+
     /// <summary>
-    /// 构造一个 captureProvider 闭包:每次调用都新截一帧并包成 ZzzCaptureContent。
+    /// 构造一个 captureProvider 闭包:每次调用都新截一帧并包成 TriggerCaptureContent。
     /// 闭包捕获 this(dispatcher 整个生命周期内实例不变);Stop 时 _capture 置 null,provider 自然返回 null。
     /// 线程安全:Capture() 各自实现保证;_capture / _hWnd 字段读在 .NET 上对后台线程可见性可接受(Stop 时 timer 先停,无新 Tick 触发)。
     /// 整段 try/catch:兜住 native 调用(Capture / GetCaptureRect / GetScale)抛的异常,避免 background 任务挂掉或异常逃逸成 UnobservedTaskException。
     /// </summary>
-    private Func<ZzzCaptureContent?> BuildCaptureProvider()
+    private Func<TriggerCaptureContent?> BuildCaptureProvider()
     {
         return () =>
         {
@@ -170,7 +180,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
                 if (frame?.Frame == null) return null;
                 var captureRect = SystemControl.GetCaptureRect(_hWnd);
                 var dpiScale = DpiHelper.GetScale(_hWnd).Y;
-                return new ZzzCaptureContent(
+                return new TriggerCaptureContent(
                     frame.Frame, _frameIndex, _timer.Interval, _hWnd, captureRect, dpiScale);
             }
             catch (Exception ex)
@@ -300,6 +310,45 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
         }
     }
 
+    /// <summary>
+    /// 热挂载/卸载暂停球活动 trigger:每帧 zzz 前台 + 暂停球图标命中即按随机顺序发 a/d/q/空格。
+    /// </summary>
+    public void SetBallPauseActivityTriggerEnabled(bool enabled)
+    {
+        lock (_locker)
+        {
+            if (_capture == null)
+            {
+                return;
+            }
+
+            var has = _triggers.Exists(t => t is BallPauseActivityTrigger);
+            if (enabled == has)
+            {
+                return;
+            }
+
+            var newList = new List<IZzzTaskTrigger>(_triggers);
+            if (enabled)
+            {
+                newList.Add(CreateBallPauseActivityTrigger());
+                Debug.WriteLine("[ZZZ] ball pause activity trigger 已挂载(重新打开)");
+            }
+            else
+            {
+                var trig = newList.Find(t => t is BallPauseActivityTrigger);
+                if (trig != null)
+                {
+                    newList.Remove(trig);
+                    (trig as IDisposable)?.Dispose();
+                }
+
+                Debug.WriteLine("[ZZZ] ball pause activity trigger 已卸载");
+            }
+            _triggers = newList;
+        }
+    }
+
     private void Tick(object? sender, ElapsedEventArgs e)
     {
         // 抢锁失败直接丢弃(同一帧不重复算)。
@@ -333,7 +382,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
             var captureRect = SystemControl.GetCaptureRect(_hWnd);
             var dpiScale = DpiHelper.GetScale(_hWnd).Y;
 
-            using var content = new ZzzCaptureContent(frame.Frame, _frameIndex, intervalMs, _hWnd, captureRect, dpiScale);
+            using var content = new TriggerCaptureContent(frame.Frame, _frameIndex, intervalMs, _hWnd, captureRect, dpiScale);
             foreach (var trigger in _triggers)
             {
                 if (!trigger.IsEnabled)
@@ -370,29 +419,13 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     }
 
     /// <summary>
-    /// 只快照 RECT? 和 float 两个值，不传 Mat。静态化供 <see cref="TemplateOverlayRunner"/> 等调用方复用。
-    /// </summary>
-    public static void DrawMatchRect(ZzzOverlayWindow? overlay, DrawingRectangle rect, ZzzCaptureContent content, string label)
-    {
-        if (overlay == null)
-        {
-            return;
-        }
-
-        var capturedCaptureRect = content.CaptureRect;
-        var capturedDpiScale = content.DpiScale;
-        Application.Current?.Dispatcher.BeginInvoke(() =>
-            overlay.SetMatchRect(rect, capturedCaptureRect, capturedDpiScale, label));
-    }
-
-    /// <summary>
-    /// 实例包装：把当前 dispatcher 的 <see cref="_overlay"/> 作为参数传入 <see cref="DrawMatchRect"/>。
+    /// 实例包装：把当前 dispatcher 的 <see cref="_overlay"/> 作为参数传入 <see cref="TriggerOverlayWindow.DrawMatchRect"/>。
     /// 保留实例方法供 dispatcher 内部 lambda 直接调用（少打一个 overlay 参数）。
     /// </summary>
-    private void DrawOverlayRect(DrawingRectangle rect, ZzzCaptureContent content, string label)
-        => DrawMatchRect(_overlay, rect, content, label);
+    private void DrawOverlayRect(DrawingRectangle rect, TriggerCaptureContent content, string label)
+        => TriggerOverlayWindow.DrawMatchRect(_overlay, rect, content, label);
 
-    private void DrawClickDot(DrawingPoint point, ZzzCaptureContent content)
+    private void DrawClickDot(DrawingPoint point, TriggerCaptureContent content)
     {
         var overlay = _overlay;
         if (overlay == null)
@@ -410,7 +443,7 @@ public sealed class ZzzTaskTriggerDispatcher : IDisposable
     {
         Application.Current?.Dispatcher.Invoke(() =>
         {
-            _overlay = new ZzzOverlayWindow();
+            _overlay = new TriggerOverlayWindow();
             _overlay.AttachTo(hWnd);
             _overlay.Show();
         });

@@ -2,14 +2,14 @@ using System;
 using OpenCvSharp;
 using Vanara.PInvoke;
 
-namespace BetterGenshinImpact.GameTask.Zzz;
+namespace BetterGenshinImpact.GameTask.Trigger;
 
 /// <summary>
 /// 单帧数据 + 屏幕坐标 / DPI 上下文。
 /// CaptureRect 与 DpiScale 由 dispatcher 在调用 OnCapture 前实时计算并塞进来，
 /// 因为 frame.CaptureRect 在 DwmSharedSurface 等模式可能缺失，dispatcher 兜底再算一次。
 /// </summary>
-public class ZzzCaptureContent : IDisposable
+public class TriggerCaptureContent : IDisposable
 {
     public Mat Image { get; }
     public int FrameIndex { get; }
@@ -28,7 +28,7 @@ public class ZzzCaptureContent : IDisposable
     /// </summary>
     public float DpiScale { get; }
 
-    public ZzzCaptureContent(Mat image, int frameIndex, double intervalMs,
+    public TriggerCaptureContent(Mat image, int frameIndex, double intervalMs,
         nint hwnd, RECT? captureRect = null, float dpiScale = 1f)
     {
         Image = image;

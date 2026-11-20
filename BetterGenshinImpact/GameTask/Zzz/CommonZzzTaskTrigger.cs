@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Diagnostics;
 using BetterGenshinImpact.View.Windows;
@@ -77,7 +78,7 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private readonly TemplateWaitTarget _daliyUiTarget = new("DaliyUi", DaliyUiPath, MatchThreshold);
     private readonly TemplateWaitTarget _daliyGoTarget = new("DaliyGo", DaliyGoPath, MatchThreshold);
     private readonly HsvWaitTarget _continueArrowTarget = new("ContinueArrow",
-        c => ZzzImageUtils.DetectArrowBlob(
+        c => ImageUtils.DetectArrowBlob(
             c.Image, ContinueArrowRoi,
             ContinueArrowSMax, ContinueArrowVMin,
             ContinueArrowMinArea, ContinueArrowMaxArea,
@@ -104,17 +105,17 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
     // 20 个 entry:target + label + 命中动作(委托)
     // 顺序决定优先级 —— 与 TestZzzTaskTrigger._scanTargets 完全一致(F2 排第一)
-    private readonly (IZzzWaitTarget Target, string Label, Action<TemplateMatchResult?, ZzzCaptureContent> OnHit)[] _entries;
+    private readonly (IWaitTarget Target, string Label, Action<TemplateMatchResult?, TriggerCaptureContent> OnHit)[] _entries;
 
-    private readonly ZzzOverlayWindow? _overlay;
+    private readonly TriggerOverlayWindow? _overlay;
 
-    public CommonZzzTaskTrigger(ZzzOverlayWindow? overlay = null)
+    public CommonZzzTaskTrigger(TriggerOverlayWindow? overlay = null)
     {
         _overlay = overlay;
         _entries = BuildEntries();
     }
 
-    public void OnCapture(ZzzCaptureContent content)
+    public void OnCapture(TriggerCaptureContent content)
     {
         // 单帧扫描所有 entry,首命中后 return(与旧 EmptyZzzTaskTrigger 的"帧内首胜出"一致),下一帧重新全扫描。
         foreach (var (target, label, onHit) in _entries)
@@ -135,7 +136,7 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
                 if (hit)
                 {
-                    Debug.WriteLine($"[ZZZ-Common] HIT label={label}{ZzzWaitForHit.FormatMatchDetail(result, target.Threshold)}");
+                    Debug.WriteLine($"[ZZZ-Common] HIT label={label}{WaitForHit.FormatMatchDetail(result, target.Threshold)}");
                     try
                     {
                         onHit(result, content);
@@ -176,9 +177,9 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
         _shop6Target.Dispose();
     }
 
-    private (IZzzWaitTarget, string, Action<TemplateMatchResult?, ZzzCaptureContent>)[] BuildEntries()
+    private (IWaitTarget, string, Action<TemplateMatchResult?, TriggerCaptureContent>)[] BuildEntries()
     {
-        return new (IZzzWaitTarget, string, Action<TemplateMatchResult?, ZzzCaptureContent>)[]
+        return new (IWaitTarget, string, Action<TemplateMatchResult?, TriggerCaptureContent>)[]
         {
             (_f2Target, "F2", (_, c) => ZzzTriggerActions.PressKeyForeground(User32.VK.VK_F2, c)),
 
@@ -199,8 +200,8 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
             (_continueArrowTarget, "ContinueArrow", (_, c) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(ContinueArrowRoi, c.Image.Width, c.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(ContinueArrowRoi, c.Image.Width, c.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     c,
@@ -321,8 +322,8 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
             (_readyToOpenTarget, "ReadyToOpen", (_, c) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(ReadyToOpenRoi, c.Image.Width, c.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(ReadyToOpenRoi, c.Image.Width, c.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     c,
@@ -332,8 +333,8 @@ public sealed class CommonZzzTaskTrigger : IZzzTaskTrigger, IDisposable
 
             (_honestBusinessTarget, "HonestBusiness", (_, c) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(HonestBusinessRoi, c.Image.Width, c.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(HonestBusinessRoi, c.Image.Width, c.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     c,

@@ -228,6 +228,9 @@
 		<None Update="GameTask\Common\Element\Assets\1920x1080\in_domain.png">
 		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
 		</None>
+		<None Update="GameTask\WuWa\tem\*.png">
+		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 		<None Update="GameTask\Zzz\Template\Common\daliyF2_1538_116_36x24_200.png">
 		  <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

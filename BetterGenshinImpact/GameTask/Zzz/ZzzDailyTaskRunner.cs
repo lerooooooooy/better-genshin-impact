@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -137,7 +138,7 @@ public sealed class ZzzDailyTaskRunner
         }
 
         int frameIndex = 0;
-        var captureProvider = new Func<ZzzCaptureContent?>(() =>
+        var captureProvider = new Func<TriggerCaptureContent?>(() =>
         {
             try
             {
@@ -147,7 +148,7 @@ public sealed class ZzzDailyTaskRunner
                 var captureRect = SystemControl.GetCaptureRect(hWnd);
                 var dpiScale = DpiHelper.GetScale(hWnd).Y;
                 frameIndex++;
-                return new ZzzCaptureContent(
+                return new TriggerCaptureContent(
                     frame.Frame, frameIndex, 1000, hWnd, captureRect, dpiScale);
             }
             catch
@@ -159,7 +160,7 @@ public sealed class ZzzDailyTaskRunner
         var enterGameRoi = new CvRect(890, 869, 140, 39);
         var ocrTarget = new OcrWaitTarget("EnterGame", enterGameRoi, "点击进入游戏");
 
-        var (_, _, content) = ZzzWaitForHit.Run(
+        var (_, _, content) = WaitForHit.Run(
             totalTimeoutMs: 30000,
             intervalMs: 1000,
             captureProvider: captureProvider,
@@ -177,7 +178,7 @@ public sealed class ZzzDailyTaskRunner
         }
 
         // 命中:在 ROI 内随机点一下(参考 testtrigger 的 ClickRect 模式)
-        var safeRoi = ZzzImageUtils.ClampRoi(enterGameRoi, content.Image.Width, content.Image.Height);
+        var safeRoi = ImageUtils.ClampRoi(enterGameRoi, content.Image.Width, content.Image.Height);
         content.Dispose();
 
         SystemControl.ActivateWindow(hWnd);

@@ -10,7 +10,7 @@ using System.Text.RegularExpressions;
 using CvPoint = OpenCvSharp.Point;
 using CvRect = OpenCvSharp.Rect;
 
-namespace BetterGenshinImpact.GameTask.Zzz;
+namespace BetterGenshinImpact.GameTask.Trigger;
 
 /// <summary>
 /// 模板匹配结果,由 <see cref="TemplateImage.TryMatch"/> 产出。
@@ -128,7 +128,7 @@ public sealed record TemplateImage(
         var dir = Global.Absolute(dirRelativePath);
         if (!Directory.Exists(dir))
         {
-            Debug.WriteLine($"[ZZZ-Template] directory not found: {dir}");
+            Debug.WriteLine($"[Trigger-Template] directory not found: {dir}");
             return Array.Empty<string>();
         }
 
@@ -142,9 +142,9 @@ public sealed record TemplateImage(
     /// 始终在 SearchRoi(外扩 Padding 后)上做匹配,越界自动钳制,完全越界退回整个图片范围。
     /// 不会向外抛异常:匹配失败时返回 Score=0 的默认结果。
     /// </summary>
-    public TemplateMatchResult TryMatch(ZzzCaptureContent content)
+    public TemplateMatchResult TryMatch(TriggerCaptureContent content)
     {
-        var safeRoi = ClampRoi(SearchRoi, content.Image.Width, content.Image.Height);
+        var safeRoi = ImageUtils.ClampRoi(SearchRoi, content.Image.Width, content.Image.Height);
         if (safeRoi.Width <= 0 || safeRoi.Height <= 0)
         {
             return new TemplateMatchResult(safeRoi, default, 0, default);
@@ -165,22 +165,5 @@ public sealed record TemplateImage(
         {
             return new TemplateMatchResult(safeRoi, default, 0, default);
         }
-    }
-
-    /// <summary>
-    /// 把可能越界的 Roi 钳制到当前帧的 [0, W) × [0, H) 范围,完全越界时退回整个图片范围。
-    /// </summary>
-    private static CvRect ClampRoi(CvRect r, int width, int height)
-    {
-        var x1 = Math.Max(0, r.X);
-        var y1 = Math.Max(0, r.Y);
-        var x2 = Math.Min(width, r.X + r.Width);
-        var y2 = Math.Min(height, r.Y + r.Height);
-        if (x2 <= x1 || y2 <= y1)
-        {
-            return new CvRect(0, 0, width, height);
-        }
-
-        return new CvRect(x1, y1, x2 - x1, y2 - y1);
     }
 }

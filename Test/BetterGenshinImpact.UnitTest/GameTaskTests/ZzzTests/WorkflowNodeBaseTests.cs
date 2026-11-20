@@ -1,5 +1,5 @@
 using System;
-using BetterGenshinImpact.GameTask.Zzz;
+using BetterGenshinImpact.GameTask.Trigger;
 using OpenCvSharp;
 using Xunit;
 
@@ -7,11 +7,11 @@ namespace BetterGenshinImpact.UnitTest.GameTaskTests.ZzzTests;
 
 public class WorkflowNodeBaseTests
 {
-    private static ZzzCaptureContent MakeFakeContent()
+    private static TriggerCaptureContent MakeFakeContent()
     {
-        // 1x1 灰度 Mat,纯用于满足 ZzzCaptureContent 构造参数。
+        // 1x1 灰度 Mat,纯用于满足 TriggerCaptureContent 构造参数。
         var mat = new Mat(1, 1, MatType.CV_8UC3, Scalar.All(128));
-        return new ZzzCaptureContent(mat, 0, 100.0, IntPtr.Zero);
+        return new TriggerCaptureContent(mat, 0, 100.0, IntPtr.Zero);
     }
 
     [Fact]

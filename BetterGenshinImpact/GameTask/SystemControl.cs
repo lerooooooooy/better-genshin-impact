@@ -242,6 +242,14 @@ public class SystemControl
 
     public static nint FindZzzHandle() => FindHandleByProcessName(ZzzProcessNames);
 
+    private static readonly string[] WuWaProcessNames =
+    [
+        "Client-Win64-Shipping",
+        "WutheringWaves",
+    ];
+
+    public static nint FindWuWaHandle() => FindHandleByProcessName(WuWaProcessNames);
+
     public static async Task<nint> StartFromLocalAsync(string path)
     {
         if (!File.Exists(path))
@@ -390,6 +398,68 @@ public class SystemControl
         }
 
         return User32.GetForegroundWindow() == zzzHwnd;
+    }
+
+    /// <summary>
+    /// 窗口所属进程 id,取不到返回 0。
+    /// </summary>
+    public static uint GetProcessIdByHandle(nint hWnd)
+    {
+        if (hWnd == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        _ = User32.GetWindowThreadProcessId(hWnd, out var pid);
+        return pid;
+    }
+
+    /// <summary>
+    /// 当前前台窗口所属进程 id,取不到返回 0。
+    /// </summary>
+    public static uint GetForegroundProcessId()
+    {
+        _ = User32.GetWindowThreadProcessId(User32.GetForegroundWindow(), out var pid);
+        return pid;
+    }
+
+    /// <summary>
+    /// 鸣潮窗口所在进程是否在前台。
+    /// 按进程 id 判断而不是句柄严格相等 —— 手动选窗可能选到子窗口,
+    /// 句柄跟真正的顶层前台窗口对不上,严格比较会永远为 false。
+    /// </summary>
+    public static bool IsWuWaActiveByProcess(nint hWnd)
+    {
+        var gamePid = GetProcessIdByHandle(hWnd);
+        if (gamePid == 0)
+        {
+            return false;
+        }
+
+        var foregroundPid = GetForegroundProcessId();
+        return foregroundPid != 0 && foregroundPid == gamePid;
+    }
+
+    /// <summary>
+    /// 鸣潮窗口是否最小化。
+    /// </summary>
+    public static bool IsWuWaMinimized(nint hWnd)
+    {
+        return hWnd != IntPtr.Zero && User32.IsIconic(hWnd);
+    }
+
+    /// <summary>
+    /// 前台窗口是否属于 BetterGI 自身或指定窗口所在的进程(或者没有前台窗口)。
+    /// </summary>
+    public static bool IsForegroundOwnedByBetterGiOrGame(nint hWnd)
+    {
+        var foregroundPid = GetForegroundProcessId();
+        if (foregroundPid == 0)
+        {
+            return true;
+        }
+
+        return foregroundPid == (uint)Environment.ProcessId || foregroundPid == GetProcessIdByHandle(hWnd);
     }
 
     public static nint GetForegroundWindowHandle()

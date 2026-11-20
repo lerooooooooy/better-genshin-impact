@@ -53,8 +53,8 @@ public class CombatKeySubstitutionTests
 
         // "escape" 不应被替换(防模糊匹配踩坑)
         Assert.Null(CombatKeySubstitution.TrySubstitute("escape"));
-        // 大小写敏感:"E" 不是 "e"
-        Assert.Null(CombatKeySubstitution.TrySubstitute("E"));
+        // 大小写不敏感:"E" 同样命中 "e"
+        Assert.Equal("y", CombatKeySubstitution.TrySubstitute("E"));
     }
 
     [Fact]

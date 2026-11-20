@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Diagnostics;
 using System.Threading;
@@ -54,7 +55,7 @@ public static class ZzzTriggerActions
     /// 焦点切换只在前台被抢占或窗口被最小化时执行 — 避免反复调 ShowWindow(SW_RESTORE)
     /// 触发 ZZZ DX 全屏 swap chain 重初始化(实测会让 ZZZ + BetterGI 互相阻塞)。
     /// </summary>
-    public static void PressKeyForeground(User32.VK keyCode, ZzzCaptureContent hitContent)
+    public static void PressKeyForeground(User32.VK keyCode, TriggerCaptureContent hitContent)
     {
         Thread.Sleep(1500);
         if (User32.GetForegroundWindow() != hitContent.Hwnd)
@@ -71,7 +72,7 @@ public static class ZzzTriggerActions
     /// 鼠标动作:SendInput 点击命中矩形内随机一点(不是固定中心,避免重复同一坐标被检测)。
     /// 屏幕坐标 = capture 坐标 + captureRect.Left/Top,然后用 65535 归一化喂给 SendInput。
     /// </summary>
-    public static void ClickMatchedArea(TemplateMatchResult r, ZzzCaptureContent hitContent)
+    public static void ClickMatchedArea(TemplateMatchResult r, TriggerCaptureContent hitContent)
     {
         if (User32.GetForegroundWindow() != hitContent.Hwnd)
         {
@@ -90,7 +91,7 @@ public static class ZzzTriggerActions
     /// 与 <see cref="ClickMatchedArea"/> 的区别:点击位置来自调用方指定的固定 UI 区域,
     /// 而非模板匹配的 absRect(用于匹配框 ≠ 实际按钮位置的场景,如 getBattery 弹窗)。
     /// </summary>
-    public static void ClickRect(ZzzCaptureContent hitContent, CvRect rect)
+    public static void ClickRect(TriggerCaptureContent hitContent, CvRect rect)
     {
         if (User32.GetForegroundWindow() != hitContent.Hwnd)
         {
@@ -106,7 +107,7 @@ public static class ZzzTriggerActions
     /// <summary>
     /// 鼠标动作:SendInput 点击给定 capture 像素坐标。captureX/Y 加上 captureRect 后转屏幕坐标。
     /// </summary>
-    public static void ClickAt(ZzzCaptureContent hitContent, int captureX, int captureY)
+    public static void ClickAt(TriggerCaptureContent hitContent, int captureX, int captureY)
     {
         var captureRect = hitContent.CaptureRect;
         if (captureRect == null)
@@ -140,7 +141,7 @@ public static class ZzzTriggerActions
     /// <summary>
     /// 键盘动作:PostMessage 后台投递 + 50ms 持续 + KeyUp。跳过抢焦点。
     /// </summary>
-    public static void PressKeyBackground(User32.VK keyCode, ZzzCaptureContent hitContent)
+    public static void PressKeyBackground(User32.VK keyCode, TriggerCaptureContent hitContent)
     {
         Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
         var sim = GetBgSim(hitContent.Hwnd);
@@ -152,7 +153,7 @@ public static class ZzzTriggerActions
     /// <summary>
     /// 鼠标动作:PostMessage 后台点击命中矩形内随机一点。跳过抢焦点。
     /// </summary>
-    public static void ClickMatchedAreaBackground(TemplateMatchResult r, ZzzCaptureContent hitContent)
+    public static void ClickMatchedAreaBackground(TemplateMatchResult r, TriggerCaptureContent hitContent)
     {
         Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
         var abs = r.AbsRect;
@@ -164,7 +165,7 @@ public static class ZzzTriggerActions
     /// <summary>
     /// 鼠标动作:PostMessage 后台点击给定 capture 坐标矩形内随机一点。跳过抢焦点。
     /// </summary>
-    public static void ClickRectBackground(ZzzCaptureContent hitContent, CvRect rect)
+    public static void ClickRectBackground(TriggerCaptureContent hitContent, CvRect rect)
     {
         Thread.Sleep(_rng.Next(ActionDelayMinMs, ActionDelayMaxMsExclusive));
         var randX = rect.X + _rng.Next(0, Math.Max(1, rect.Width));
@@ -176,7 +177,7 @@ public static class ZzzTriggerActions
     /// 鼠标动作:PostMessage 后台点击给定 capture 像素坐标。captureX/Y + captureRect
     /// 转窗口相对坐标(与 Foreground 的屏幕归一化坐标不同)。
     /// </summary>
-    public static void ClickAtBackground(ZzzCaptureContent hitContent, int captureX, int captureY)
+    public static void ClickAtBackground(TriggerCaptureContent hitContent, int captureX, int captureY)
     {
         var captureRect = hitContent.CaptureRect;
         if (captureRect == null)
@@ -195,10 +196,10 @@ public static class ZzzTriggerActions
     /// 委托给 dispatcher 的静态 DrawMatchRect,跨线程安全由 dispatcher 兜底。
     /// 调用方传入自己的 overlay 引用;null 时跳过画框但仍跑匹配。
     /// </summary>
-    public static void DrawHitRect(ZzzOverlayWindow? overlay, TemplateMatchResult result, ZzzCaptureContent content, string label)
+    public static void DrawHitRect(TriggerOverlayWindow? overlay, TemplateMatchResult result, TriggerCaptureContent content, string label)
     {
         var abs = result.AbsRect;
         var rect = new System.Drawing.Rectangle(abs.X, abs.Y, abs.Width, abs.Height);
-        ZzzTaskTriggerDispatcher.DrawMatchRect(overlay, rect, content, $"{label} hit {result.Score:F3}");
+        TriggerOverlayWindow.DrawMatchRect(overlay, rect, content, $"{label} hit {result.Score:F3}");
     }
 }

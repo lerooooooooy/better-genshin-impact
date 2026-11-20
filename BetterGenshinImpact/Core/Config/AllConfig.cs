@@ -68,6 +68,13 @@ public partial class AllConfig : ObservableObject
     private bool _zzzNewTriggerEnabled;
 
     /// <summary>
+    /// 启动绝区零截图器时挂载"暂停球活动" trigger:每帧检测暂停球图标,
+    /// 仅在 zzz 处于前台时,按 Fisher-Yates 随机顺序发 a/d/q/空格 共 4 个按键。
+    /// </summary>
+    [ObservableProperty]
+    private bool _zzzBallPauseActivityTriggerEnabled;
+
+    /// <summary>
     /// ZZZ 后台模式:开启后用 PostMessage(不抢焦点)代替默认的 SendInput(抢焦点 + 切前台)。
     /// 仅 NewZzzTaskTrigger 当前接入此开关;ZZZ 实际是否响应 PostMessage 待用户实测
     /// (见 ZzzTaskTriggerDispatcher 注释 ZZZ DX 全屏优化 + RawInput 可能不读 WM_KEYDOWN)。
@@ -80,6 +87,18 @@ public partial class AllConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private string _zzzInstallPath = string.Empty;
+
+    /// <summary>
+    /// 鸣潮(Wuthering Waves)窗口捕获的方式
+    /// </summary>
+    [ObservableProperty]
+    private string _wuWaCaptureMode = CaptureModes.BitBlt.ToString();
+
+    /// <summary>
+    /// 启动鸣潮截图器时挂载通用 trigger:逐帧识别「跳过」按钮并在 overlay 上画框(不点击)。
+    /// </summary>
+    [ObservableProperty]
+    private bool _wuWaCommonTriggerEnabled = true;
 
     /// <summary>
     ///     详细的错误日志

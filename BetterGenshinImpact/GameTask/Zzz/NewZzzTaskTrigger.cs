@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -41,7 +42,7 @@ namespace BetterGenshinImpact.GameTask.Zzz;
 /// 建节点时把 <see cref="_overlay"/> 传给 TemplateWorkflowNode,base class 命中时自动调
 /// <see cref="ZzzTriggerActions.DrawHitRect"/> 在 overlay 上画框。HSV / OCR 命中时
 /// TemplateMatchResult 为 null,base class 不画 —— 这两类节点(operation lambda 内)需手动调
-/// <see cref="ZzzTaskTriggerDispatcher.DrawMatchRect"/> 画框。OCR 点击节点
+/// <see cref="TriggerOverlayWindow.DrawMatchRect"/> 画框。OCR 点击节点
 /// (<see cref="BuildOcrClickOperation"/>)画的是 OCR 命中文字的 bbox(<see cref="OcrWorkflowNode.LastOcrBbox"/>),
 /// 命中坐标更准确,便于调试肉眼比对。
 ///
@@ -59,7 +60,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     public string Name => "NewZzzTaskTrigger";
     public bool IsEnabled { get; set; } = true;
 
-    private readonly ZzzOverlayWindow? _overlay;
+    private readonly TriggerOverlayWindow? _overlay;
     private IWorkflowNode? _current;
 
     // dispatcher Stop 回调:由 dispatcher 在 CreateNewTrigger 时注入
@@ -181,9 +182,9 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     private static readonly CvRect GetBatteryClickRect = new(854, 709, 203, 37);
 
     // Operation 占位(被 ConfigureCommonNodes 立刻覆盖,但 ctor 必须传一个非 null 值)
-    private static readonly Action<ZzzCaptureContent, TemplateMatchResult?> NoOpPlaceholder = (_, _) => { };
+    private static readonly Action<TriggerCaptureContent, TemplateMatchResult?> NoOpPlaceholder = (_, _) => { };
 
-    public NewZzzTaskTrigger(ZzzOverlayWindow? overlay = null, Action? requestDispatcherStop = null)
+    public NewZzzTaskTrigger(TriggerOverlayWindow? overlay = null, Action? requestDispatcherStop = null)
     {
         _overlay = overlay;
         _requestDispatcherStop = requestDispatcherStop;
@@ -235,8 +236,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: ActivityFullText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(ActivityFullRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(ActivityFullRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -291,8 +292,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: HouHouText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(HouHouRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(HouHouRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -314,8 +315,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: AjiuText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(AjiuRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(AjiuRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -338,8 +339,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: Rwd1Text,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(Rwd1Roi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(Rwd1Roi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -375,8 +376,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: YesterdayBillText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(YesterdayBillRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(YesterdayBillRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -398,8 +399,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: ReadyToOpenText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(ReadyToOpenRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(ReadyToOpenRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -421,8 +422,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: HonestBusinessText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(HonestBusinessRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(HonestBusinessRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -444,8 +445,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: ShengyiXinglongText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(ShengyiXinglongRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(ShengyiXinglongRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -466,8 +467,8 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
             targetText: KaidianDajiText,
             operation: (content, _) =>
             {
-                var safeRoi = ZzzImageUtils.ClampRoi(KaidianDajiRoi, content.Image.Width, content.Image.Height);
-                ZzzTaskTriggerDispatcher.DrawMatchRect(
+                var safeRoi = ImageUtils.ClampRoi(KaidianDajiRoi, content.Image.Width, content.Image.Height);
+                TriggerOverlayWindow.DrawMatchRect(
                     _overlay,
                     new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
                     content,
@@ -823,7 +824,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// 字典迭代顺序 = ctor 插入顺序(BuildCommonTemplateChain 按目录扫描顺序入,
     /// 然后 OcrTingmanMaster / ContinueArrow / OcrTingmanSpecial 按 ctor 顺序追加)。
     /// </summary>
-    private WorkflowNodeBase? FindFirstMatchingNode(ZzzCaptureContent content)
+    private WorkflowNodeBase? FindFirstMatchingNode(TriggerCaptureContent content)
     {
         foreach (var (label, node) in _nodesByLabel)
         {
@@ -841,13 +842,13 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// (bbox 在 capture 坐标系;fallback 到 safeRoi 是因为 OCR bbox 解析异常时仍能工作)。
     /// 同时更新 overlay 上的画框 → OCR bbox(命中时)/ ROI(回退时)而非 ROI,方便观察。
     /// </summary>
-    private Action<ZzzCaptureContent, TemplateMatchResult?> BuildOcrClickOperation(OcrWorkflowNode node, string label)
+    private Action<TriggerCaptureContent, TemplateMatchResult?> BuildOcrClickOperation(OcrWorkflowNode node, string label)
     {
         return (content, _) =>
         {
-            var safeRoi = ZzzImageUtils.ClampRoi(node.Roi, content.Image.Width, content.Image.Height);
+            var safeRoi = ImageUtils.ClampRoi(node.Roi, content.Image.Width, content.Image.Height);
             var clickRect = node.LastOcrBbox ?? safeRoi;
-            ZzzTaskTriggerDispatcher.DrawMatchRect(
+            TriggerOverlayWindow.DrawMatchRect(
                 _overlay,
                 new System.Drawing.Rectangle(clickRect.X, clickRect.Y, clickRect.Width, clickRect.Height),
                 content,
@@ -866,7 +867,7 @@ public sealed class NewZzzTaskTrigger : IZzzTaskTrigger, IDisposable
     /// 3) _current 非 null → 调 MatchAndOperation 推进 _current
     /// dispatcher 50ms timer 提供轮询节奏,不需要内部 sleep。
     /// </summary>
-    public void OnCapture(ZzzCaptureContent content)
+    public void OnCapture(TriggerCaptureContent content)
     {
         // 每帧开头刷新后台模式有效标志(前台窗口状态变化 → useBackground 自动切换)
         ZzzBackgroundOperation.RefreshOperationMode(content.Hwnd);

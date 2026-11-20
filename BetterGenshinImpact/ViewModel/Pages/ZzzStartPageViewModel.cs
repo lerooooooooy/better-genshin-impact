@@ -99,6 +99,10 @@ public partial class ZzzStartPageViewModel : ViewModel
         {
             _dispatcher.SetNewTriggerEnabled(Config.ZzzNewTriggerEnabled);
         }
+        else if (e.PropertyName == nameof(AllConfig.ZzzBallPauseActivityTriggerEnabled))
+        {
+            _dispatcher.SetBallPauseActivityTriggerEnabled(Config.ZzzBallPauseActivityTriggerEnabled);
+        }
     }
 
     partial void OnSelectedModeChanged(string? value)
@@ -434,7 +438,7 @@ public partial class ZzzStartPageViewModel : ViewModel
 
     private void Start(IntPtr hWnd)
     {
-        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzTestTriggerEnabled, Config.ZzzCommonTriggerEnabled, Config.ZzzNewTriggerEnabled);
+        _dispatcher.Start(hWnd, GetCaptureMode(), Config.ZzzTestTriggerEnabled, Config.ZzzCommonTriggerEnabled, Config.ZzzNewTriggerEnabled, Config.ZzzBallPauseActivityTriggerEnabled);
         IsRunning = true;
         StatusText = "运行中111";
     }

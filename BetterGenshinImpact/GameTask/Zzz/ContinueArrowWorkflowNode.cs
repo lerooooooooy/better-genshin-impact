@@ -1,3 +1,4 @@
+using BetterGenshinImpact.GameTask.Trigger;
 using System;
 using System.Diagnostics;
 using BetterGenshinImpact.View.Windows;
@@ -31,7 +32,7 @@ public sealed class ContinueArrowWorkflowNode : WorkflowNodeBase
     private const int VMin = 130;
 
     // 连通域形状过滤 7 道防线(由廉到贵):labels / area / height / aspect /
-    // extent / largestFraction / convexity。详见 ZzzImageUtils.DetectArrowBlob。
+    // extent / largestFraction / convexity。详见 ImageUtils.DetectArrowBlob。
     private const int MinArea = 80;
     private const int MaxArea = 400;
     private const int MinHeight = 16;
@@ -43,14 +44,14 @@ public sealed class ContinueArrowWorkflowNode : WorkflowNodeBase
 
     private readonly HsvWaitTarget _target;
 
-    public ContinueArrowWorkflowNode(int maxRetries, ZzzOverlayWindow? overlay = null)
+    public ContinueArrowWorkflowNode(int maxRetries, TriggerOverlayWindow? overlay = null)
         : base(overlay)
     {
         Label = "ContinueArrow";
         MaxRetries = maxRetries;
         SuccessTemplate = null;
         _target = new HsvWaitTarget("ContinueArrow",
-            c => ZzzImageUtils.DetectArrowBlob(
+            c => ImageUtils.DetectArrowBlob(
                 c.Image, Roi,
                 SMax, VMin,
                 MinArea, MaxArea,
@@ -65,18 +66,18 @@ public sealed class ContinueArrowWorkflowNode : WorkflowNodeBase
     public override int MaxRetries { get; internal set; }
     public override IWorkflowNode? SuccessTemplate { get; internal set; }
     public override IWorkflowNode? FailTemplate { get; internal set; }
-    public override Action<ZzzCaptureContent, TemplateMatchResult?> Operation { get; internal set; }
+    public override Action<TriggerCaptureContent, TemplateMatchResult?> Operation { get; internal set; }
 
-    public override bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? result)
+    public override bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? result)
         => _target.TryMatch(content, out result);
 
     public override void Dispose() { /* HsvWaitTarget 不持资源 */ }
 
-    private void OnHit(ZzzCaptureContent content, TemplateMatchResult? _)
+    private void OnHit(TriggerCaptureContent content, TemplateMatchResult? _)
     {
         // HSV 命中时 TemplateMatchResult 为 null,base class 不画 —— 手动画 ROI
-        var safeRoi = ZzzImageUtils.ClampRoi(Roi, content.Image.Width, content.Image.Height);
-        ZzzTaskTriggerDispatcher.DrawMatchRect(
+        var safeRoi = ImageUtils.ClampRoi(Roi, content.Image.Width, content.Image.Height);
+        TriggerOverlayWindow.DrawMatchRect(
             Overlay,
             new System.Drawing.Rectangle(safeRoi.X, safeRoi.Y, safeRoi.Width, safeRoi.Height),
             content,

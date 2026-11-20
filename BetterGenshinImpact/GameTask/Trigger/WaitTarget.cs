@@ -4,15 +4,15 @@ using BetterGenshinImpact.Core.Recognition.OCR;
 using OpenCvSharp;
 using CvRect = OpenCvSharp.Rect;
 
-namespace BetterGenshinImpact.GameTask.Zzz;
+namespace BetterGenshinImpact.GameTask.Trigger;
 
 /// <summary>
 /// 多目标 "等待出现" 的目标抽象。一个 target 代表一种"命中条件":
 /// 模板图走 <see cref="TemplateWaitTarget"/>,HSV / 形状 / 任意 detector 走 <see cref="HsvWaitTarget"/>。
 ///
-/// 由 <see cref="TestZzzTaskTrigger.WaitForHit"/> 在共享轮询预算内遍历,任一命中即返回。
+/// 由 <see cref="WaitForHit"/> 在共享轮询预算内遍历,任一命中即返回。
 /// </summary>
-public interface IZzzWaitTarget
+public interface IWaitTarget
 {
     /// <summary>
     /// 命中后在 caller 处显示的名字(用于 Debug / LogMiss / Advance)。
@@ -32,14 +32,14 @@ public interface IZzzWaitTarget
     /// HSV 命中时为 null(caller 走 HSV 专属画框路径)。
     /// 模板加载失败 / 匹配失败 → 返回 false + null。
     /// </summary>
-    bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult);
+    bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? templateResult);
 }
 
 /// <summary>
 /// 模板图 target:首次 TryMatch 时懒加载 <see cref="TemplateImage"/>,之后复用。
 /// 模板加载失败会持续返回 false 直到本次调用结束(不抛异常)。
 /// </summary>
-public sealed class TemplateWaitTarget : IZzzWaitTarget, IDisposable
+public sealed class TemplateWaitTarget : IWaitTarget, IDisposable
 {
     public string Label { get; }
     public double? Threshold => _threshold;
@@ -54,7 +54,7 @@ public sealed class TemplateWaitTarget : IZzzWaitTarget, IDisposable
         _threshold = threshold;
     }
 
-    public bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult)
+    public bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? templateResult)
     {
         templateResult = null;
         if (_template == null)
@@ -62,11 +62,10 @@ public sealed class TemplateWaitTarget : IZzzWaitTarget, IDisposable
             try
             {
                 _template = TemplateImage.FromFile(_templatePath, _threshold);
-                //Debug.WriteLine($"[ZZZ-Template] loaded name={_template.Name} roi=({_template.Roi.X},{_template.Roi.Y},{_template.Roi.Width},{_template.Roi.Height}) padding={_template.Padding} threshold={_template.Threshold:F2}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[ZZZ-Template] {Label} load failed: {ex.GetType().Name}: {ex.Message}");
+                Debug.WriteLine($"[Trigger-Template] {Label} load failed: {ex.GetType().Name}: {ex.Message}");
                 return false;
             }
         }
@@ -87,19 +86,19 @@ public sealed class TemplateWaitTarget : IZzzWaitTarget, IDisposable
 /// HSV / 任意 detector target:把 detector 委托给 caller,TryMatch 只调一次。
 /// detector 抛异常会被当作 miss(返回 false),避免单次抛错打挂整个轮询循环。
 /// </summary>
-public sealed class HsvWaitTarget : IZzzWaitTarget
+public sealed class HsvWaitTarget : IWaitTarget
 {
     public string Label { get; }
     public double? Threshold => null;
-    private readonly Func<ZzzCaptureContent, bool> _detector;
+    private readonly Func<TriggerCaptureContent, bool> _detector;
 
-    public HsvWaitTarget(string label, Func<ZzzCaptureContent, bool> detector)
+    public HsvWaitTarget(string label, Func<TriggerCaptureContent, bool> detector)
     {
         Label = label;
         _detector = detector;
     }
 
-    public bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult)
+    public bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? templateResult)
     {
         templateResult = null;
         try
@@ -108,7 +107,7 @@ public sealed class HsvWaitTarget : IZzzWaitTarget
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ZZZ-Wait] {Label} detector threw: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[Trigger-Wait] {Label} detector threw: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }
@@ -123,7 +122,7 @@ public sealed class HsvWaitTarget : IZzzWaitTarget
 /// <see cref="LastMatchBbox"/>,给 <see cref="OcrWorkflowNode"/> 的 Operation 用,
 /// 实现"点识别文字 bbox 内随机位置"而非 ROI 内随机位置。
 /// </summary>
-public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
+public sealed class OcrWaitTarget : IWaitTarget, IDisposable
 {
     public string Label { get; }
     public double? Threshold => null;
@@ -145,13 +144,13 @@ public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
         _targetText = targetText;
     }
 
-    public bool TryMatch(ZzzCaptureContent content, out TemplateMatchResult? templateResult)
+    public bool TryMatch(TriggerCaptureContent content, out TemplateMatchResult? templateResult)
     {
         templateResult = null;
         LastMatchBbox = null;
         try
         {
-            var safeRoi = ZzzImageUtils.ClampRoi(_roi, content.Image.Width, content.Image.Height);
+            var safeRoi = ImageUtils.ClampRoi(_roi, content.Image.Width, content.Image.Height);
             using var sub = new Mat(content.Image, safeRoi);
             var ocr = OcrFactory.Paddle.OcrResult(sub);
             var region = ocr.FindRegionByText(_targetText);
@@ -172,7 +171,7 @@ public sealed class OcrWaitTarget : IZzzWaitTarget, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ZZZ-Wait] {Label} OCR threw: {ex.GetType().Name}: {ex.Message}");
+            Debug.WriteLine($"[Trigger-Wait] {Label} OCR threw: {ex.GetType().Name}: {ex.Message}");
             return false;
         }
     }

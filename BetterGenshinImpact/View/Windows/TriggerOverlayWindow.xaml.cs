@@ -10,6 +10,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using BetterGenshinImpact.GameTask;
+using BetterGenshinImpact.GameTask.Trigger;
 using BetterGenshinImpact.Helpers;
 using Vanara.PInvoke;
 
@@ -19,7 +20,7 @@ namespace BetterGenshinImpact.View.Windows;
 /// <summary>
 /// 透明 + 鼠标穿透 + TopMost + Canvas。跟游戏窗口走、画命中框/标签/点击红点。
 /// </summary>
-public partial class ZzzOverlayWindow : System.Windows.Window
+public partial class TriggerOverlayWindow : System.Windows.Window
 {
     private nint _targetHwnd;
 
@@ -30,7 +31,7 @@ public partial class ZzzOverlayWindow : System.Windows.Window
     private readonly List<(DrawingPoint Position, long CreatedMs)> _clickDots = new();
     private const long ClickDotLifetimeMs = 800;
 
-    public ZzzOverlayWindow()
+    public TriggerOverlayWindow()
     {
         InitializeComponent();
         Loaded += (_, _) => ApplyOwnerAndStyles();
@@ -80,12 +81,43 @@ public partial class ZzzOverlayWindow : System.Windows.Window
     }
 
     /// <summary>
+    /// 线程安全的画框入口:后台线程(trigger 的 OnCapture)调用,内部切到 UI 线程执行。
+    /// 只快照 RECT? 和 float 两个值,不传 Mat。overlay 为 null 时直接跳过。
+    /// </summary>
+    public static void DrawMatchRect(TriggerOverlayWindow? overlay, DrawingRectangle rect, TriggerCaptureContent content, string label)
+    {
+        if (overlay == null)
+        {
+            return;
+        }
+
+        var capturedCaptureRect = content.CaptureRect;
+        var capturedDpiScale = content.DpiScale;
+        Application.Current?.Dispatcher.BeginInvoke(() =>
+            overlay.SetMatchRect(rect, capturedCaptureRect, capturedDpiScale, label));
+    }
+
+    /// <summary>
+    /// 线程安全的清框入口:后台线程(trigger 的 OnCapture)调用,内部切到 UI 线程执行。
+    /// 目标消失后必须显式调用,否则上一次命中画下的框会一直留在屏幕上。
+    /// </summary>
+    public static void ClearMatchRect(TriggerOverlayWindow? overlay)
+    {
+        if (overlay == null)
+        {
+            return;
+        }
+
+        Application.Current?.Dispatcher.BeginInvoke(() => overlay.ClearMatchRectCore());
+    }
+
+    /// <summary>
     /// 命中回调时(UI 线程)。本方法不放任何 Mat/IO。
     /// </summary>
     public void SetMatchRect(DrawingRectangle rect, RECT? captureRect, float dpiScale, string label)
     {
         // 先清掉上一帧残留的绿框/标签。
-        ClearMatchRect();
+        ClearMatchRectCore();
 
         if (dpiScale <= 0)
         {
@@ -142,7 +174,7 @@ public partial class ZzzOverlayWindow : System.Windows.Window
     /// <summary>
     /// dispatcher 每帧 Tick 末尾。只清 Rectangle 和 TextBlock(Ellipse 红点不删)。
     /// </summary>
-    public void ClearMatchRect()
+    public void ClearMatchRectCore()
     {
         foreach (var child in MatchCanvas.Children.OfType<Rectangle>().ToList())
         {
